@@ -1,0 +1,29 @@
+{
+  "name": "@calendar-agent/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "calendar-agent": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/bin.js"
+  },
+  "dependencies": {
+    "@calendar-agent/app": "*",
+    "@calendar-agent/core": "*",
+    "@calendar-agent/config": "*",
+    "commander": "^12.1.0",
+    "luxon": "^3.5.0",
+    "@calendar-agent/agent": "*"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  }
+}

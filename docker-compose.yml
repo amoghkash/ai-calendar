@@ -1,0 +1,55 @@
+# Local development stack: PostgreSQL + the API and web UI.
+#
+#   cp .env.example .env
+#   docker compose up --build
+#
+# Then open http://localhost:4319
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: calendar
+      POSTGRES_PASSWORD: calendar
+      POSTGRES_DB: calendar_agent
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U calendar -d calendar_agent']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://calendar:calendar@postgres:5432/calendar_agent
+      CALENDAR_AGENT_HOST: 0.0.0.0
+      CALENDAR_AGENT_PORT: '4319'
+      CALENDAR_AGENT_PUBLIC_URL: ${CALENDAR_AGENT_PUBLIC_URL:-http://localhost:4319}
+      CALENDAR_AGENT_TIMEZONE: ${CALENDAR_AGENT_TIMEZONE:-UTC}
+      CALENDAR_AGENT_LOG_LEVEL: ${CALENDAR_AGENT_LOG_LEVEL:-info}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    ports:
+      - '4319:4319'
+    volumes:
+      - app-data:/data
+
+volumes:
+  postgres-data:
+  app-data:

@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@calendar-agent/core": ["./packages/core/src/index.ts"],
+      "@calendar-agent/imessage-contract": ["./packages/imessage-contract/src/index.ts"],
+      "@calendar-agent/config": ["./packages/config/src/index.ts"],
+      "@calendar-agent/database": ["./packages/database/src/index.ts"],
+      "@calendar-agent/integrations": ["./packages/integrations/src/index.ts"],
+      "@calendar-agent/agent": ["./packages/agent/src/index.ts"],
+      "@calendar-agent/app": ["./packages/app/src/index.ts"]
+    },
+    "baseUrl": ".",
+    "declarationMap": false
+  },
+  "include": ["tests/**/*.ts"]
+}

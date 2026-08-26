@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+.DS_Store
+coverage/
+.data/
+*.log
+
+# Google OAuth client credentials (downloaded from Cloud Console)
+client_secret_*.json

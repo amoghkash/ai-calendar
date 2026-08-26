@@ -1,0 +1,44 @@
+{
+  "name": "calendar-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Open-source, local-first AI scheduling assistant",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b && npm run build --workspace @calendar-agent/web",
+    "start": "node apps/server/dist/bin.js",
+    "clean": "tsc -b --clean && rm -rf packages/*/dist apps/*/dist apps/web/dist",
+    "typecheck": "tsc -b && tsc -p tsconfig.tests.json && npm run typecheck --workspace @calendar-agent/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:postgres": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://calendar:calendar@localhost:5432/calendar_agent} vitest run packages/database",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "cli": "node --enable-source-maps apps/cli/dist/bin.js",
+    "bridge": "tsc -b apps/imessage-bridge && node apps/imessage-bridge/dist/bin.js",
+    "bridge:token": "tsc -b apps/imessage-bridge && node apps/imessage-bridge/dist/bin.js --print-token",
+    "dev:server": "npm run dev --workspace @calendar-agent/server",
+    "dev:web": "npm run dev --workspace @calendar-agent/web",
+    "dev": "npm run build && concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.14.0",
+    "@types/luxon": "^3.7.5",
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.23.1",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.14.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.13.0",
+    "vitest": "^2.1.4"
+  }
+}

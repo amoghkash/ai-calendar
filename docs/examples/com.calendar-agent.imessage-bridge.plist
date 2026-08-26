@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copy to ~/Library/LaunchAgents/, edit the two paths and the token, then:
+
+    launchctl load ~/Library/LaunchAgents/com.calendar-agent.imessage-bridge.plist
+
+  Grant Full Disk Access to the node binary named in ProgramArguments - not to
+  your terminal. That is the whole point of running this under launchd: the TCC
+  grant attaches to one stable, long-lived process instead of following whatever
+  happened to launch the dev server.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.calendar-agent.imessage-bridge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/YOU/Documents/ai-calendar/apps/imessage-bridge/dist/bin.js</string>
+  </array>
+
+  <!--
+    No token here on purpose. The bridge reads (or creates) one at
+    ~/.calendar-agent/imessage-bridge/token with mode 0600; a plist in
+    ~/Library/LaunchAgents is world-readable, so embedding the secret would
+    protect it less well than the file it replaced.
+  -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Leave false until you have watched the drafts it would have sent. -->
+    <key>IMESSAGE_BRIDGE_SEND</key>
+    <string>false</string>
+
+    <key>IMESSAGE_BRIDGE_REGION</key>
+    <string>US</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/calendar-agent-imessage-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/calendar-agent-imessage-bridge.error.log</string>
+</dict>
+</plist>

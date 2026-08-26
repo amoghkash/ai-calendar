@@ -1,0 +1,85 @@
+# calendar-agent configuration.
+# Copy to calendar-agent.yaml and edit. Secrets belong in .env, not here.
+# Full reference: docs/configuration.md
+#
+# This file seeds the first run. After that, anything the settings panel covers
+# (the gear icon in the web UI) is stored in the database and takes precedence.
+
+timezone: UTC
+
+working_hours:
+  monday: '09:00-17:00'
+  tuesday: '09:00-17:00'
+  wednesday: '09:00-17:00'
+  thursday: '09:00-17:00'
+  friday: '09:00-17:00'
+
+# Windows may cross midnight.
+sleep_hours:
+  monday: '23:00-07:00'
+  tuesday: '23:00-07:00'
+  wednesday: '23:00-07:00'
+  thursday: '23:00-07:00'
+  friday: '23:00-07:00'
+  saturday: '23:30-08:00'
+  sunday: '23:00-07:00'
+
+# Recurring unavailable time, e.g. lunch.
+recurring_blocks:
+  monday: '12:30-13:15'
+  tuesday: '12:30-13:15'
+  wednesday: '12:30-13:15'
+  thursday: '12:30-13:15'
+  friday: '12:30-13:15'
+
+deep_work:
+  enabled: true
+  preferred_start: '09:00'
+  preferred_end: '12:00'
+  allow_meetings: false
+
+scheduling:
+  minimum_block_minutes: 30
+  maximum_block_minutes: 180
+  allow_task_splitting: true
+  buffer_between_blocks_minutes: 0
+  protect_existing_events: true
+  granularity_minutes: 15
+  planning_horizon_days: 14
+  placement_strategy: earliest_fit
+
+# The server refreshes calendars on a timer. A detected external change
+# produces a proposal; it is only applied where automation.mode already allows.
+sync:
+  enabled: true
+  interval_minutes: 15
+  replan_on_change: true
+
+automation:
+  # read_only  - analyse only, never write
+  # suggest    - propose changes and wait for approval (default)
+  # autonomous - apply changes the policy below allows
+  mode: suggest
+  move_policy:
+    MOVABLE: auto
+    PROTECTED: never
+    FIXED: never
+    UNKNOWN: ask
+  freeze_window_minutes: 60
+  max_auto_mutations: 25
+
+# Teach the classifier about your calendar.
+classification_rules:
+  - id: medical
+    classification: PROTECTED
+    title_pattern: 'doctor|dentist|therapy|hospital'
+  - id: focus-blocks
+    classification: MOVABLE
+    title_pattern: '^focus|^deep work'
+
+llm:
+  provider: none # none | anthropic | openai | gemini | openrouter | ollama
+  # model: claude-opus-5
+
+logging:
+  level: info

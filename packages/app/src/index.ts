@@ -1,0 +1,16 @@
+export * from './context.js';
+export * from './provider-registry.js';
+export * from './services/task-service.js';
+export * from './services/calendar-service.js';
+export * from './services/category-service.js';
+export * from './services/maintenance-service.js';
+export * from './services/scheduling-service.js';
+export * from './services/sync-service.js';
+export * from './services/background-sync.js';
+export * from './services/agent-service.js';
+export * from './services/preferences-service.js';
+export * from './services/preferences-input.js';
+export * from './services/settings-service.js';
+export * from './services/doctor-service.js';
+export { createTestApp } from './testing.js';
+export type { TestApp, TestAppOptions } from './testing.js';

@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/imessage-contract" },
+    { "path": "packages/config" },
+    { "path": "packages/database" },
+    { "path": "packages/integrations" },
+    { "path": "packages/agent" },
+    { "path": "packages/app" },
+    { "path": "apps/cli" },
+    { "path": "apps/server" },
+    { "path": "apps/imessage-bridge" }
+  ]
+}

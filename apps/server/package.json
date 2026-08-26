@@ -1,0 +1,25 @@
+{
+  "name": "@calendar-agent/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/bin.js",
+    "dev": "node --watch dist/bin.js"
+  },
+  "dependencies": {
+    "@calendar-agent/app": "*",
+    "@calendar-agent/core": "*",
+    "@calendar-agent/config": "*",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "luxon": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21"
+  }
+}
