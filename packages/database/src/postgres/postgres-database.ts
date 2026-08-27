@@ -14,6 +14,9 @@ import type {
   Database,
   EventContactLink,
   EventContactLinkRepository,
+  Outreach,
+  OutreachRepository,
+  OutreachState,
   EventSyncRecord,
   PreferencesRepository,
   SettingsRepository,
@@ -57,6 +60,7 @@ export class PostgresDatabase implements Database {
   readonly accounts: CalendarAccountRepository;
   readonly categories: CategoryRepository;
   readonly contactLinks: EventContactLinkRepository;
+  readonly outreach: OutreachRepository;
   readonly preferences: PreferencesRepository;
   readonly settings: SettingsRepository;
   readonly syncState: SyncStateRepository;
@@ -591,6 +595,67 @@ export class PostgresDatabase implements Database {
       },
     };
 
+    this.outreach = {
+      async get(id) {
+        const rows = await query('SELECT * FROM outreach WHERE id = $1', [id]);
+        return rows[0] ? toOutreach(rows[0]) : undefined;
+      },
+      async list(q) {
+        const rows =
+          q.states === undefined
+            ? await query('SELECT * FROM outreach WHERE user_id = $1 ORDER BY created_at DESC', [
+                q.userId,
+              ])
+            : await query(
+                'SELECT * FROM outreach WHERE user_id = $1 AND state = ANY($2) ORDER BY created_at DESC',
+                [q.userId, [...q.states]],
+              );
+        return rows.map(toOutreach);
+      },
+      async save(outreach) {
+        await query(
+          `INSERT INTO outreach (
+             id, user_id, contact_id, display_name, handle, activity, duration_minutes,
+             proposed_slots, message, state, agreed_slot, event_id,
+             created_at, updated_at, sent_at, expires_at, note, last_reply_at, clarifications, kind)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+           ON CONFLICT (id) DO UPDATE SET
+             proposed_slots = EXCLUDED.proposed_slots, message = EXCLUDED.message,
+             state = EXCLUDED.state, agreed_slot = EXCLUDED.agreed_slot,
+             event_id = EXCLUDED.event_id, updated_at = EXCLUDED.updated_at,
+             sent_at = EXCLUDED.sent_at, expires_at = EXCLUDED.expires_at,
+             note = EXCLUDED.note, last_reply_at = EXCLUDED.last_reply_at,
+             clarifications = EXCLUDED.clarifications, kind = EXCLUDED.kind`,
+          [
+            outreach.id,
+            outreach.userId,
+            outreach.contactId,
+            outreach.displayName,
+            outreach.handle,
+            outreach.activity,
+            outreach.durationMinutes,
+            JSON.stringify(outreach.proposedSlots),
+            outreach.message,
+            outreach.state,
+            outreach.agreedSlot === undefined ? null : JSON.stringify(outreach.agreedSlot),
+            outreach.eventId ?? null,
+            outreach.createdAt,
+            outreach.updatedAt,
+            outreach.sentAt ?? null,
+            outreach.expiresAt ?? null,
+            outreach.note ?? null,
+            outreach.lastReplyAt ?? null,
+            outreach.clarifications ?? null,
+            outreach.kind ?? 'propose',
+          ],
+        );
+        return outreach;
+      },
+      async delete(id) {
+        await query('DELETE FROM outreach WHERE id = $1', [id]);
+      },
+    };
+
     this.preferences = {
       async get(userId) {
         const rows = await query('SELECT * FROM scheduling_preferences WHERE user_id = $1', [
@@ -947,6 +1012,39 @@ function toContactLink(row: QueryResultRow): EventContactLink {
     handle: String(row.handle),
     source: String(row.source) as EventContactLink['source'],
     createdAt: num(row.created_at),
+  };
+}
+
+function toOutreach(row: QueryResultRow): Outreach {
+  const agreed = opt(row.agreed_slot);
+  const eventId = opt(row.event_id) as string | undefined;
+  const note = opt(row.note) as string | undefined;
+  const sentAt = optNum(row.sent_at);
+  const lastReplyAt = optNum(row.last_reply_at);
+  const clarifications = optNum(row.clarifications);
+  const kind = opt(row.kind) as Outreach['kind'];
+  const expiresAt = optNum(row.expires_at);
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    contactId: String(row.contact_id),
+    displayName: String(row.display_name),
+    handle: String(row.handle),
+    activity: String(row.activity),
+    durationMinutes: num(row.duration_minutes),
+    proposedSlots: row.proposed_slots as Outreach['proposedSlots'],
+    message: String(row.message),
+    state: String(row.state) as OutreachState,
+    ...(agreed === undefined ? {} : { agreedSlot: agreed as Outreach['agreedSlot'] }),
+    ...(eventId === undefined ? {} : { eventId }),
+    ...(note === undefined ? {} : { note }),
+    createdAt: num(row.created_at),
+    updatedAt: num(row.updated_at),
+    ...(sentAt === undefined ? {} : { sentAt }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    ...(lastReplyAt === undefined ? {} : { lastReplyAt }),
+    ...(clarifications === undefined ? {} : { clarifications }),
+    ...(kind === undefined ? {} : { kind }),
   };
 }
 

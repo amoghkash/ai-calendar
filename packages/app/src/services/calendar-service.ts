@@ -592,11 +592,13 @@ export class CalendarService {
     return event;
   }
 
-  async deleteEvent(
-    userId: UserId,
-    eventId: EventId,
-    options: { readonly notifyAttendees?: boolean } = {},
-  ): Promise<void> {
+  /**
+   * Everything that can refuse a deletion, checked without doing one.
+   *
+   * Shared with the deferred path so a refusal is reported when the user asks,
+   * not ten seconds later when nobody is watching.
+   */
+  async assertDeletable(userId: UserId, eventId: EventId): Promise<CalendarEvent> {
     const existing = await this.db.events.get(eventId);
     if (!existing) throw new NotFoundError('event', eventId);
     if (existing.userId !== userId) throw new NotFoundError('event', eventId);
@@ -605,9 +607,18 @@ export class CalendarService {
         `"${existing.title}" is a recurring series. Delete a single occurrence instead.`,
       );
     }
-
-    const { calendar, provider } = await this.resolveProvider(existing.calendarId);
+    const { calendar } = await this.resolveProvider(existing.calendarId);
     await this.assertWritable(userId, calendar);
+    return existing;
+  }
+
+  async deleteEvent(
+    userId: UserId,
+    eventId: EventId,
+    options: { readonly notifyAttendees?: boolean } = {},
+  ): Promise<void> {
+    const existing = await this.assertDeletable(userId, eventId);
+    const { calendar, provider } = await this.resolveProvider(existing.calendarId);
 
     await provider.deleteEvent({
       calendarExternalId: calendar.externalId,

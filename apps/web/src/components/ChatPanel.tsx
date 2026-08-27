@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import { Markdown } from './Markdown';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -68,7 +69,13 @@ export function ChatPanel({ messages, busy, llm, onSend, thinking, onClose }: Pr
         )}
         {messages.map((message, index) => (
           <div key={index} className={`message ${message.role}`}>
-            <div className="bubble">{message.content}</div>
+            <div className="bubble">
+              {message.role === 'assistant' ? (
+                <Markdown text={message.content} />
+              ) : (
+                message.content
+              )}
+            </div>
           </div>
         ))}
 

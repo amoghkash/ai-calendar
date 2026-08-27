@@ -5,7 +5,11 @@ import type {
   ContactDirectory,
   DirectoryContact,
   MessagingCapabilities,
+  MessageSendRequest,
+  MessageSendResult,
+  MessageSender,
   MessagingProvider,
+  ThreadMessage,
   ThreadSnapshot,
 } from '@calendar-agent/core';
 import { ProviderError, UnsupportedError } from '@calendar-agent/core';
@@ -14,6 +18,8 @@ import {
   contactSearchResponseSchema,
   errorResponseSchema,
   healthResponseSchema,
+  sendResultSchema,
+  threadMessagesResponseSchema,
   threadStateSchema,
 } from '@calendar-agent/imessage-contract';
 import type { FetchLike } from '../http.js';
@@ -64,7 +70,7 @@ export interface BridgeClientOptions {
  * faults. `capabilities()` in particular never throws: the calendar app has to
  * be able to render "messaging unavailable" without an error path.
  */
-export class ImessageBridgeClient implements MessagingProvider, ContactDirectory {
+export class ImessageBridgeClient implements MessagingProvider, ContactDirectory, MessageSender {
   readonly id = 'imessage';
   private readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
@@ -126,10 +132,13 @@ export class ImessageBridgeClient implements MessagingProvider, ContactDirectory
     return parsed.data.contacts;
   }
 
-  async thread(handle: string): Promise<ThreadSnapshot | undefined> {
+  async thread(handle: string, since?: number): Promise<ThreadSnapshot | undefined> {
     let payload: unknown;
     try {
-      payload = await this.get(`/threads?handle=${encodeURIComponent(handle)}`);
+      payload = await this.get(
+        `/threads?handle=${encodeURIComponent(handle)}` +
+          (since === undefined ? '' : `&since=${encodeURIComponent(String(since))}`),
+      );
     } catch (error) {
       // No conversation with this person is a normal answer, not a failure.
       if (error instanceof NotFoundFromBridge) return undefined;
@@ -151,11 +160,66 @@ export class ImessageBridgeClient implements MessagingProvider, ContactDirectory
     };
   }
 
-  private async get(path: string): Promise<unknown> {
+  async recentMessages(handle: string, limit = 20): Promise<readonly ThreadMessage[]> {
+    let payload: unknown;
+    try {
+      payload = await this.get(
+        `/threads/messages?handle=${encodeURIComponent(handle)}&limit=${encodeURIComponent(String(limit))}`,
+      );
+    } catch (error) {
+      // No conversation is an answer, not a failure - the same as `thread`.
+      if (error instanceof NotFoundFromBridge) return [];
+      throw error;
+    }
+    const parsed = threadMessagesResponseSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new ProviderError('The bridge returned an unrecognised message list.');
+    }
+    return parsed.data.messages.map((message) => ({
+      id: message.id,
+      at: message.at,
+      direction: message.direction,
+      text: message.text,
+      ...(message.senderName === undefined ? {} : { senderName: message.senderName }),
+    }));
+  }
+
+  async send(request: MessageSendRequest): Promise<MessageSendResult> {
+    const payload = await this.post('/outbox', {
+      idempotencyKey: request.idempotencyKey,
+      to: request.handle,
+      text: request.text,
+    });
+    const parsed = sendResultSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new ProviderError('The bridge returned an unrecognised send result.');
+    }
+    return {
+      status: parsed.data.status,
+      retrySafe: parsed.data.retrySafe,
+      ...(parsed.data.reason === undefined ? {} : { reason: parsed.data.reason }),
+    };
+  }
+
+  private get(path: string): Promise<unknown> {
+    return this.request(path);
+  }
+
+  private post(path: string, body: unknown): Promise<unknown> {
+    return this.request(path, body);
+  }
+
+  private async request(path: string, body?: unknown): Promise<unknown> {
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-        headers: { authorization: `Bearer ${this.options.token}`, accept: 'application/json' },
+        method: body === undefined ? 'GET' : 'POST',
+        headers: {
+          authorization: `Bearer ${this.options.token}`,
+          accept: 'application/json',
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch {
@@ -165,16 +229,16 @@ export class ImessageBridgeClient implements MessagingProvider, ContactDirectory
     }
 
     const text = await response.text();
-    let body: unknown;
+    let payload: unknown;
     try {
-      body = text.length > 0 ? JSON.parse(text) : undefined;
+      payload = text.length > 0 ? JSON.parse(text) : undefined;
     } catch {
-      body = undefined;
+      payload = undefined;
     }
 
-    if (response.ok) return body;
+    if (response.ok) return payload;
 
-    const parsed = errorResponseSchema.safeParse(body);
+    const parsed = errorResponseSchema.safeParse(payload);
     const message = parsed.success ? parsed.data.error.message : `bridge returned ${response.status}`;
     if (response.status === 404) throw new NotFoundFromBridge(message);
     if (response.status === 401) {

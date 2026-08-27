@@ -3,6 +3,28 @@ import type { LLMProvider, LLMRequest, LLMResponse } from './types.js';
 
 export type MockResponder = (request: LLMRequest) => LLMResponse | Promise<LLMResponse>;
 
+/** Script one turn that asks for tools; the loop feeds results back and asks again. */
+export const mockToolCalls = (
+  calls: readonly { name: string; input: unknown; id?: string }[],
+  text = '',
+): LLMResponse => ({
+  text,
+  model: 'mock-model',
+  stopReason: 'tool_use',
+  toolCalls: calls.map((call, index) => ({
+    id: call.id ?? `call_${index}`,
+    name: call.name,
+    input: call.input,
+  })),
+});
+
+/** Script the turn that ends the loop. */
+export const mockText = (text: string): LLMResponse => ({
+  text,
+  model: 'mock-model',
+  stopReason: 'end',
+});
+
 /** Scripted provider. Tests must never depend on a real model response. */
 export class MockLLMProvider implements LLMProvider {
   readonly name = 'mock';

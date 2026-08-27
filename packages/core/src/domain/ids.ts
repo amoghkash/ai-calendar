@@ -8,6 +8,7 @@ export type ProjectId = string;
 export type ConversationId = string;
 export type ChangeSetId = string;
 export type EventContactLinkId = string;
+export type OutreachId = string;
 
 /** Port for id generation so domain services stay deterministic in tests. */
 export interface IdGenerator {

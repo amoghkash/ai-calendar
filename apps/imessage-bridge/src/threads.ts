@@ -8,6 +8,8 @@ export interface ThreadServiceOptions {
   readonly region: string;
   readonly chatScanLimit: number;
   readonly historyScanLimit: number;
+  /** How long to remember that a handle has no thread. */
+  readonly missTtlMs: number;
 }
 
 /**
@@ -22,15 +24,47 @@ export interface ThreadServiceOptions {
 export class ThreadService {
   /** handle -> chat. The expensive half of the lookup, and it rarely changes. */
   private readonly chats = new Map<string, ImsgChat>();
+  /**
+   * Handles known to have no thread, and when that was established.
+   *
+   * Without this a handle nobody has ever messaged costs a full chat-list scan
+   * on every single lookup - the worst case paying the highest price. Kept with
+   * a short life because a thread can appear the moment somebody writes.
+   */
+  private readonly missing = new Map<string, number>();
 
   constructor(
     private readonly runner: ImsgRunner,
     private readonly options: ThreadServiceOptions,
+    private readonly now: () => number = Date.now,
   ) {}
 
-  async state(handle: string): Promise<ThreadState> {
+  /**
+   * @param since when given, and the chat's newest message is no later than it,
+   * the per-direction timestamps are skipped along with the history read that
+   * derives them. Reading a conversation's messages is by far the expensive
+   * call here (measured in seconds), and a poller asking "anything new?" every
+   * couple of minutes must not pay it every time to be told no.
+   */
+  async state(handle: string, since?: number): Promise<ThreadState> {
     const { normalized } = normalizeHandle(handle, this.options.region);
     const chat = await this.resolveChat(normalized);
+    const chatLastAt = toEpochMs(chat.last_message_at);
+    const contactNameOnly = chat.contact_name ?? chat.display_name;
+
+    if (since !== undefined && chatLastAt !== undefined && chatLastAt <= since) {
+      return {
+        handle,
+        normalized,
+        chatId: chat.id,
+        ...(chat.service === undefined ? {} : { service: chat.service }),
+        ...(contactNameOnly === undefined || contactNameOnly.length === 0
+          ? {}
+          : { contactName: contactNameOnly }),
+        lastMessageAt: chatLastAt,
+      };
+    }
+
     const messages = await this.history(chat.id, this.options.historyScanLimit);
 
     let lastInboundAt: number | undefined;
@@ -87,6 +121,11 @@ export class ThreadService {
     const cached = this.chats.get(normalized);
     if (cached !== undefined) return cached;
 
+    const missedAt = this.missing.get(normalized);
+    if (missedAt !== undefined && this.now() - missedAt < this.options.missTtlMs) {
+      throw notFound(`No direct message thread found for ${normalized}.`);
+    }
+
     const result = await this.runner.run([
       'chats',
       '--json',
@@ -110,8 +149,10 @@ export class ThreadService {
     }
 
     if (match === undefined) {
+      this.missing.set(normalized, this.now());
       throw notFound(`No direct message thread found for ${normalized}.`);
     }
+    this.missing.delete(normalized);
     return match;
   }
 

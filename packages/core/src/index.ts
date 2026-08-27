@@ -6,6 +6,8 @@ export * from './domain/calendar.js';
 export * from './domain/contact.js';
 export * from './domain/messaging.js';
 export * from './domain/name-match.js';
+export * from './domain/outreach.js';
+export * from './domain/reply-intent.js';
 export * from './domain/classification.js';
 export * from './domain/category.js';
 export * from './domain/schedule.js';
@@ -28,6 +30,8 @@ export * from './planning/change-set.js';
 // Ports
 export * from './ports/calendar-provider.js';
 export * from './ports/messaging.js';
+export * from './ports/message-writer.js';
+export * from './ports/reply-reader.js';
 export * from './ports/repositories.js';
 
 // Cross-cutting

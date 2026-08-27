@@ -183,6 +183,7 @@ export function buildConfig(
       // that will never have one.
       enabled: envFlag(env.CALENDAR_AGENT_MESSAGING_ENABLED) ?? false,
       baseUrl: env.CALENDAR_AGENT_MESSAGING_URL ?? 'http://127.0.0.1:4320',
+      pollIntervalMinutes: Number(env.CALENDAR_AGENT_MESSAGING_POLL_MINUTES ?? 2),
     },
     server: {
       host: serverHost,

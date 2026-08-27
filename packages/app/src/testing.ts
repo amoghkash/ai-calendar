@@ -9,7 +9,7 @@ import type { RawConfig } from '@calendar-agent/config';
 import { buildConfig } from '@calendar-agent/config';
 import { MemoryDatabase } from '@calendar-agent/database';
 import { MockCalendarProvider } from '@calendar-agent/integrations';
-import type { Database } from '@calendar-agent/core';
+import type { Database, MessageWriter, ReplyReader } from '@calendar-agent/core';
 import type { CommandParser, LLMProvider } from '@calendar-agent/agent';
 import type { AppContext, MessagingIntegration } from './context.js';
 import { createApp } from './context.js';
@@ -35,6 +35,10 @@ export interface TestAppOptions {
   readonly db?: Database;
   /** Fake messaging integration; without it the app runs with none, as usual. */
   readonly messaging?: MessagingIntegration;
+  /** Second opinion on replies the deterministic rules cannot read. */
+  readonly replyReader?: ReplyReader;
+  /** Writes outbound message text; without it the template is used. */
+  readonly messageWriter?: MessageWriter;
 }
 
 /**
@@ -76,6 +80,8 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     registry,
     ...(options.llm ? { llm: options.llm } : {}),
     ...(options.parser ? { parser: options.parser } : {}),
+    ...(options.replyReader ? { replyReader: options.replyReader } : {}),
+    ...(options.messageWriter ? { messageWriter: options.messageWriter } : {}),
     ...(options.messaging ? { messaging: options.messaging } : {}),
   });
 

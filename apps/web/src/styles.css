@@ -2457,3 +2457,371 @@ label.checkbox input {
   flex-direction: column;
   gap: var(--s-xxs);
 }
+
+/* --- outbox ---------------------------------------------------------------
+   Each entry shows the exact text that would go out, because the text is the
+   thing being judged. Sending happens in Messages; this panel only makes it
+   easy to take, and tells you when somebody answered. */
+.outbox .outreach {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  padding: var(--s-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xs);
+}
+.outbox .outreach + .outreach {
+  margin-top: var(--s-xs);
+}
+.outreach-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-xs);
+}
+.outreach-who {
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.outreach-head .badge {
+  margin-left: auto;
+}
+.badge.outreach-state {
+  font-size: 12px;
+  padding: 1px 8px;
+}
+.badge.outreach-state.draft {
+  background: var(--surface-card);
+  color: var(--muted);
+}
+.badge.outreach-state.sent {
+  background: rgba(245, 158, 11, 0.14);
+  color: #92610a;
+}
+.badge.outreach-state.needs_you {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+}
+.badge.outreach-state.agreed,
+.badge.outreach-state.booked {
+  background: rgba(16, 185, 129, 0.12);
+  color: #05704f;
+}
+
+/* The message itself, quoted so it reads as text rather than as UI copy. */
+.outreach-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface-soft);
+  border-radius: var(--r-md);
+  padding: var(--s-xs) var(--s-sm);
+}
+.outreach-times {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.outreach-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-xs);
+  flex-wrap: wrap;
+}
+.outreach-actions .push {
+  margin-left: auto;
+}
+.outreach-reply {
+  display: flex;
+  gap: var(--s-xs);
+}
+.outreach-reply input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Finished conversations collapse to one quiet line each. */
+.outreach-history {
+  list-style: none;
+  margin: var(--s-sm) 0 0;
+  padding: var(--s-xs) 0 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+.outreach-history li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-xs);
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.outreach-history .outreach-who {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--body);
+}
+.outreach-history-when {
+  margin-left: auto;
+  color: var(--muted-soft);
+}
+.outbox-foot {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted-soft);
+}
+
+/* The copy button swaps its own label, and a button that changes width shoves
+   whatever follows it onto the next row. Reserve the wider label's space:
+   "Copied" measures ~105px with its icon and padding, so 7rem clears it. */
+.outreach-actions .copy {
+  min-width: 7rem;
+  justify-content: center;
+}
+
+/* --- markdown in assistant bubbles ---------------------------------------
+   The assistant answers in prose with the occasional list. These rules keep a
+   reply looking like a message rather than like a document: no heading sizes,
+   tight leading, and lists that sit inside the bubble instead of indenting off
+   its edge. */
+.bubble .md-p {
+  margin: 0;
+}
+.bubble .md-p + .md-p,
+.bubble .md-p + .md-list,
+.bubble .md-list + .md-p {
+  margin-top: var(--s-xs);
+}
+.bubble .md-list {
+  margin: 0;
+  padding-left: 1.15em;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bubble .md-list li {
+  /* The default marker sits too far out in a narrow bubble. */
+  padding-left: 2px;
+}
+.bubble .md-code {
+  font-family: var(--font-code);
+  font-size: 0.92em;
+  background: var(--surface-card);
+  border-radius: var(--r-xs);
+  padding: 1px 4px;
+}
+.bubble a {
+  color: inherit;
+  text-decoration: underline;
+}
+/* The user's own bubble is dark; a card-grey code chip would vanish in it. */
+.message.user .bubble .md-code {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* The one action on an event that reaches another person. It sits under the
+   people it would text, so it is obvious who "them" is. */
+.people-ask {
+  display: flex;
+  align-items: center;
+  gap: var(--s-xs);
+  flex-wrap: wrap;
+}
+.field.people .outreach-message {
+  font-size: 12px;
+}
+
+/* --- the day at a glance --------------------------------------------------
+   Reads as a list of decisions rather than a timetable: what wants an answer
+   comes first, then what is left today, then what already happened. */
+.panel.agenda {
+  overflow-y: auto;
+  gap: var(--s-md);
+}
+.agenda-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+.agenda-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xs);
+}
+.agenda-section h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* One row per thing: time on the left, detail in the middle, the one action
+   on the right. */
+.agenda-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-sm);
+  padding: var(--s-xs) var(--s-sm);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+}
+.agenda-entry.past {
+  border-color: var(--hairline-soft);
+  color: var(--muted);
+}
+.agenda-time {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 3.4em;
+  padding-top: 1px;
+}
+.agenda-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.agenda-title {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.agenda-people {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--s-xs);
+}
+.agenda-posture {
+  font-size: 11px;
+  color: var(--muted-soft);
+}
+.agenda-confirm {
+  flex: none;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+/* Anything waiting on the reader, set apart from the timetable. */
+.agenda-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xs);
+  padding: var(--s-sm);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+}
+.agenda-action.needs_you {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+.agenda-action-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-xs);
+}
+.agenda-who {
+  font-size: 13px;
+  font-weight: 500;
+}
+.agenda-action-head .badge {
+  margin-left: auto;
+}
+.agenda-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--body);
+}
+.agenda-risk {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-xs);
+  font-size: 12px;
+  color: var(--body);
+}
+.agenda-free {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-soft);
+}
+
+/* A refresh that failed is worth one quiet line, not an error banner: the page
+   is still showing something true, just not the newest thing. */
+.agenda-stale {
+  display: flex;
+  align-items: center;
+  gap: var(--s-xxs);
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted-soft);
+}
+
+/* --- deletion undo --------------------------------------------------------
+   Centre bottom, above everything, because it is the only way back and it
+   expires. Deliberately not in a corner: this one should be hard to miss. */
+.deletion-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: var(--s-lg);
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-xs);
+  align-items: center;
+  pointer-events: none;
+}
+.deletion-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--s-sm);
+  pointer-events: auto;
+  background: var(--surface-dark);
+  color: var(--on-dark);
+  border-radius: var(--r-pill);
+  padding: 10px var(--s-sm) 10px var(--s-md);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+  animation: toast-in 200ms ease-out backwards;
+}
+.deletion-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40ch;
+}
+.deletion-countdown {
+  color: var(--on-dark-soft);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5ch;
+  text-align: right;
+}
+.deletion-toast button {
+  background: var(--on-dark);
+  color: var(--surface-dark);
+  border: none;
+  border-radius: var(--r-pill);
+  padding: 4px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.deletion-toast button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}

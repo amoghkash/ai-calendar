@@ -64,6 +64,8 @@ export interface UserConfig {
 export interface MessagingConfig {
   readonly enabled: boolean;
   readonly baseUrl: string;
+  /** How often to look for answers to messages that have gone out. */
+  readonly pollIntervalMinutes: number;
 }
 
 export interface AppConfig {

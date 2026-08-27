@@ -6,6 +6,9 @@ import type {
   Database,
   IdGenerator,
   Logger,
+  MessageSender,
+  MessageWriter,
+  ReplyReader,
   Scheduler,
   User,
 } from '@calendar-agent/core';
@@ -22,17 +25,23 @@ import type { CommandParser, LLMProvider } from '@calendar-agent/agent';
 import { ImessageBridgeClient, readBridgeToken } from '@calendar-agent/integrations';
 import {
   AdaptiveCommandParser,
+  LLMMessageWriter,
+  LLMReplyReader,
   HeuristicCommandParser,
   ReconfigurableLLMProvider,
 } from '@calendar-agent/agent';
 import type { ProviderRegistry } from './provider-registry.js';
 import { DefaultProviderRegistry } from './provider-registry.js';
+import { buildAgentTools } from './agent/tools.js';
 import { AgentService } from './services/agent-service.js';
 import { CalendarService } from './services/calendar-service.js';
 import { CategoryService } from './services/category-service.js';
 import { MaintenanceService } from './services/maintenance-service.js';
 import { DoctorService } from './services/doctor-service.js';
 import { ContactLinkService } from './services/contact-link-service.js';
+import { OutreachService } from './services/outreach-service.js';
+import { TodayService } from './services/today-service.js';
+import { DeferredDeletionService } from './services/deferred-deletion-service.js';
 import { PreferencesService } from './services/preferences-service.js';
 import { SettingsService } from './services/settings-service.js';
 import { SchedulingService } from './services/scheduling-service.js';
@@ -47,6 +56,10 @@ export interface AppOverrides {
   readonly scheduler?: Scheduler;
   readonly llm?: LLMProvider;
   readonly parser?: CommandParser;
+  /** Second opinion on replies the deterministic rules cannot read. */
+  readonly replyReader?: ReplyReader;
+  /** Writes outbound message text; without it the deterministic template is used. */
+  readonly messageWriter?: MessageWriter;
   readonly registry?: ProviderRegistry;
   /** Messaging integration; tests inject a fake, most runs have none. */
   readonly messaging?: MessagingIntegration;
@@ -81,6 +94,11 @@ export interface AppContext {
   readonly settings: SettingsService;
   readonly doctor: DoctorService;
   readonly contactLinks: ContactLinkService;
+  readonly outreach: OutreachService;
+  readonly today: TodayService;
+  readonly deletions: DeferredDeletionService;
+  /** Present only when the messaging bridge is configured and reachable. */
+  readonly messaging?: MessagingProvider;
   shutdown(): Promise<void>;
 }
 
@@ -187,6 +205,23 @@ export async function createApp(
     logger,
   );
   const sync = new SyncService(db, calendars, preferences, clock, ids, logger);
+  const outreach = new OutreachService(
+    db,
+    scheduling,
+    contactLinks,
+    calendars,
+    preferences,
+    settings,
+    clock,
+    ids,
+    logger,
+    // Only useful with a model behind it; `none` reads nothing and the
+    // deterministic rules stand on their own.
+    overrides.replyReader ?? (llm.name === 'none' ? undefined : new LLMReplyReader({ llm })),
+    messaging?.sender,
+    overrides.messageWriter ??
+      (llm.name === 'none' ? undefined : new LLMMessageWriter({ llm })),
+  );
   const agent = new AgentService(
     db,
     parser,
@@ -198,10 +233,18 @@ export async function createApp(
     ids,
     logger,
     llm,
+    outreach,
+    // Late-bound: the tools need the finished context, which includes this
+    // very service. The closure only runs on a turn, by which time it exists.
+    (uid) => buildAgentTools(context, uid),
   );
+  const today = new TodayService(db, scheduling, contactLinks, outreach, preferences, clock);
+
+  const deletions = new DeferredDeletionService(calendars, clock, logger);
+
   const doctor = new DoctorService(resolvedConfig, db, registry, preferences, clock, logger, llm);
 
-  return {
+  const context: AppContext = {
     config: resolvedConfig,
     db,
     clock,
@@ -222,10 +265,17 @@ export async function createApp(
     settings,
     doctor,
     contactLinks,
+    outreach,
+    today,
+    deletions,
+    ...(messaging === undefined ? {} : { messaging: messaging.provider }),
     async shutdown() {
+      // An unfired timer deletes nothing; abandoning is the safe direction.
+      deletions.stop();
       await db.close();
     },
   };
+  return context;
 }
 
 async function ensureUser(db: Database, config: AppConfig, clock: Clock): Promise<User> {
@@ -246,6 +296,8 @@ async function ensureUser(db: Database, config: AppConfig, clock: Clock): Promis
 export interface MessagingIntegration {
   readonly directory: ContactDirectory;
   readonly provider: MessagingProvider;
+  /** Optional: a test harness can supply reading without sending. */
+  readonly sender?: MessageSender;
 }
 
 function buildMessaging(
@@ -262,5 +314,7 @@ function buildMessaging(
     return undefined;
   }
   const client = new ImessageBridgeClient({ baseUrl: config.messaging.baseUrl, token });
-  return { directory: client, provider: client };
+  // One client, three roles. The ports stay separate so nothing upstream can
+  // acquire sending by holding the reading one.
+  return { directory: client, provider: client, sender: client };
 }

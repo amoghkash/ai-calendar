@@ -194,4 +194,79 @@ describe('contact links', () => {
 
     expect(await harness.app.contactLinks.suggestForEvent(event.id)).toEqual([]);
   });
+
+  it('asks the bridge once per person, not once per refresh', async () => {
+    // A glance page re-reading every half minute must not re-ask about
+    // everybody each time; the lookup is the expensive part.
+    let calls = 0;
+    const counting: MessagingProvider = {
+      ...messagingWith(),
+      thread: () => {
+        calls += 1;
+        return Promise.resolve(undefined);
+      },
+    };
+    const { harness, event } = await harnessWithEvent(counting);
+    await link(harness, event.id);
+
+    await harness.app.contactLinks.peopleOnEvent(event.id);
+    await harness.app.contactLinks.peopleOnEvent(event.id);
+    await harness.app.contactLinks.peopleOnEvent(event.id);
+
+    expect(calls).toBe(1);
+  });
+
+  it('tells the bridge how far back it needs to look', async () => {
+    const seen: (number | undefined)[] = [];
+    const recording: MessagingProvider = {
+      ...messagingWith(),
+      thread: (_handle: string, since?: number) => {
+        seen.push(since);
+        return Promise.resolve(undefined);
+      },
+    };
+    const { harness, event } = await harnessWithEvent(recording);
+    await link(harness, event.id);
+
+    await harness.app.contactLinks.peopleOnEvent(event.id);
+
+    // Passing the floor is what lets the bridge skip reading the conversation.
+    expect(seen[0]).toBe(event.createdAt);
+  });
+
+  it('re-asks when it needs to look further back than it did', async () => {
+    let calls = 0;
+    const counting: MessagingProvider = {
+      ...messagingWith(),
+      thread: () => {
+        calls += 1;
+        return Promise.resolve(undefined);
+      },
+    };
+    const { harness, event: newer } = await harnessWithEvent(counting);
+    await link(harness, newer.id);
+
+    // An event created earlier asks about an earlier floor.
+    const calendar = (await harness.app.calendars.listCalendars(harness.userId)).find(
+      (c) => c.isWritable,
+    )!;
+    const older = await harness.app.calendars.createEvent({
+      userId: harness.userId,
+      calendarId: calendar.id,
+      title: 'Older lunch',
+      start: NOW + 3_600_000,
+      end: NOW + 7_200_000,
+    });
+    await link(harness, older.id);
+    // Make its floor genuinely earlier than the one already cached.
+    const stored = await harness.app.db.events.get(older.id);
+    await harness.app.db.events.save({ ...stored!, createdAt: NOW - 86_400_000 });
+
+    await harness.app.contactLinks.peopleOnEvent(newer.id);
+    const afterFirst = calls;
+    await harness.app.contactLinks.peopleOnEvent(older.id);
+
+    // A snapshot taken from a later floor cannot answer an earlier question.
+    expect(calls).toBeGreaterThan(afterFirst);
+  });
 });

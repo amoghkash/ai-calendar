@@ -70,6 +70,7 @@ export function testBridgeConfig(overrides: Partial<BridgeConfig> = {}): BridgeC
     chatScanLimit: 400,
     historyScanLimit: 40,
     imsgTimeoutMs: 5_000,
+    missTtlMs: 300_000,
     contactsDumpTimeoutMs: 5_000,
     contactsProbeTimeoutMs: 1_000,
     ...overrides,

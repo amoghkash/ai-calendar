@@ -1,4 +1,5 @@
 import type {
+  AvailabilityBasis,
   CalendarEvent,
   CalendarMutation,
   CalendarTarget,
@@ -71,6 +72,8 @@ export interface SlotQuery {
   readonly range?: Interval;
   readonly limit?: number;
   readonly deepWorkOnly?: boolean;
+  /** `waking_hours` for anything that is not work. Defaults to working hours. */
+  readonly basis?: AvailabilityBasis;
 }
 
 /**
@@ -549,6 +552,7 @@ export class SchedulingService {
       preferences,
       events: await this.busyEvents(query.userId, events),
       reserved: blocks.filter(isLiveBlock).map((block) => ({ start: block.start, end: block.end })),
+      ...(query.basis === undefined ? {} : { basis: query.basis }),
     });
     return availability.windows
       .filter((window) => durationMinutes(window) >= query.durationMinutes)

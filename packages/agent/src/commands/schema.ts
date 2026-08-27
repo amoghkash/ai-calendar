@@ -177,6 +177,27 @@ export const listTasksCommand = z.object({
   status: z.enum(['todo', 'in_progress', 'blocked', 'completed', 'cancelled']).optional(),
 });
 
+/**
+ * Arrange something with a person who is not on your calendar.
+ *
+ * Distinct from `create_event`: there is nobody to invite and nothing to write
+ * yet. It produces a draft message offering times, and a human decides whether
+ * it is ever sent.
+ */
+export const scheduleWithPersonCommand = z.object({
+  type: z.literal('schedule_with_person'),
+  /** A name as a person said it: "Sarah", "Sarah Chen". */
+  person: z.string().min(1),
+  /** What is being arranged, in words that can appear in the message. */
+  activity: z.string().min(1),
+  durationMinutes: z.number().int().positive().optional(),
+  withinDays: z.number().int().positive().optional(),
+  /** When the user named a day or span - "tomorrow", "next week" - it goes here. */
+  rangeStart: isoDateTime.optional(),
+  rangeEnd: isoDateTime.optional(),
+  tone: z.enum(['casual', 'warm', 'formal']).optional(),
+});
+
 export const requestClarificationCommand = z.object({
   type: z.literal('request_clarification'),
   question: z.string().min(1),
@@ -198,6 +219,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   listRisksCommand,
   listScheduleCommand,
   listTasksCommand,
+  scheduleWithPersonCommand,
   requestClarificationCommand,
 ]);
 
@@ -216,6 +238,7 @@ export type UpdateTaskCommand = z.infer<typeof updateTaskCommand>;
 export type ScheduleCommand = z.infer<typeof scheduleCommand>;
 export type RescheduleCommand = z.infer<typeof rescheduleCommand>;
 export type FindTimeCommand = z.infer<typeof findTimeCommand>;
+export type ScheduleWithPersonCommand = z.infer<typeof scheduleWithPersonCommand>;
 export type BlockTimeCommand = z.infer<typeof blockTimeCommand>;
 export type ExplainScheduleCommand = z.infer<typeof explainScheduleCommand>;
 
@@ -235,6 +258,7 @@ export const COMMAND_TYPES = [
   'list_risks',
   'list_schedule',
   'list_tasks',
+  'schedule_with_person',
   'request_clarification',
 ] as const;
 

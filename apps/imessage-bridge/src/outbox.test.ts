@@ -71,6 +71,46 @@ describe('outbox', () => {
     expect(blocked.reason).toMatch(/Daily send limit/);
   });
 
+  it('lets the real send through after a dry run used the same key', async () => {
+    // The bug this covers: pressing send while sending was disabled recorded
+    // the key, so enabling sending and pressing again returned "duplicate" and
+    // nothing was ever sent.
+    const runner = new FakeImsgRunner({ send: ok('{"status":"sent"}') });
+    const config = testBridgeConfig({ sendEnabled: false });
+    const dry = new Outbox(runner, config);
+    await dry.load();
+    expect((await dry.send(request())).status).toBe('simulated');
+
+    const live = new Outbox(runner, { ...config, sendEnabled: true });
+    await live.load();
+    const result = await live.send(request());
+
+    expect(result.status).toBe('sent');
+    expect(runner.calls.some((call) => call[0] === 'send')).toBe(true);
+  });
+
+  it('lets a retry through after a capped attempt', async () => {
+    const runner = new FakeImsgRunner({ send: ok('{"status":"sent"}') });
+    const config = testBridgeConfig({ sendEnabled: true, globalDailyLimit: 0 });
+    const capped = new Outbox(runner, config);
+    await capped.load();
+    expect((await capped.send(request())).status).toBe('blocked');
+
+    const raised = new Outbox(runner, { ...config, globalDailyLimit: 5 });
+    await raised.load();
+
+    // Nothing went out, so the key is not spent.
+    expect((await raised.send(request())).status).toBe('sent');
+  });
+
+  it('still refuses a genuine repeat of something that went out', async () => {
+    const outbox = new Outbox(sendOk, testBridgeConfig({ sendEnabled: true }));
+    await outbox.load();
+    await outbox.send(request());
+
+    expect((await outbox.send(request())).status).toBe('duplicate');
+  });
+
   it('keeps idempotency and caps across a restart', async () => {
     const config = testBridgeConfig({ sendEnabled: true, perRecipientDailyLimit: 1 });
     const first = new Outbox(sendOk, config);

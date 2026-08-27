@@ -2,6 +2,7 @@ import type { ReconfigurableLLMProvider } from '@calendar-agent/agent';
 import type { AppConfig, LLMProviderInfo } from '@calendar-agent/config';
 import { LLM_PROVIDERS, llmProviderInfo, resolveLLMApiKey } from '@calendar-agent/config';
 import type {
+  OutreachTone,
   AppSettings,
   Clock,
   Database,
@@ -12,7 +13,13 @@ import type {
   UserId,
   WeekStart,
 } from '@calendar-agent/core';
-import { ValidationError, isLLMProviderName, isWeekStart } from '@calendar-agent/core';
+import {
+  OUTREACH_TONES,
+  ValidationError,
+  isLLMProviderName,
+  isOutreachTone,
+  isWeekStart,
+} from '@calendar-agent/core';
 
 const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
@@ -69,6 +76,7 @@ export class SettingsService {
       },
       logLevel: this.config.logLevel,
       weekStart: this.config.ui.weekStart,
+      outreachTone: 'casual',
       updatedAt: 0,
     };
   }
@@ -141,7 +149,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export function parseSettingsPatch(raw: unknown, current: AppSettings): Partial<AppSettings> {
   if (!isRecord(raw)) throw new ValidationError('The request body must be an object.');
-  const patch: { llm?: LLMSettings; logLevel?: LogLevel; weekStart?: WeekStart } = {};
+  const patch: {
+    llm?: LLMSettings;
+    logLevel?: LogLevel;
+    weekStart?: WeekStart;
+    outreachTone?: OutreachTone;
+  } = {};
+
+  if (raw.outreachTone !== undefined) {
+    if (!isOutreachTone(raw.outreachTone)) {
+      throw new ValidationError(`"outreachTone" must be one of: ${OUTREACH_TONES.join(', ')}.`);
+    }
+    patch.outreachTone = raw.outreachTone;
+  }
 
   if (raw.weekStart !== undefined) {
     if (!isWeekStart(raw.weekStart)) {

@@ -62,6 +62,7 @@ export const AGENT_PLAN_JSON_SCHEMA: Record<string, unknown> = {
               'list_risks',
               'list_schedule',
               'list_tasks',
+              'schedule_with_person',
               'request_clarification',
             ],
           },
@@ -96,6 +97,13 @@ export const AGENT_PLAN_JSON_SCHEMA: Record<string, unknown> = {
             required: ['start', 'end'],
           },
           question: { type: 'string' },
+          person: { type: 'string', description: 'A person to arrange something with, by name' },
+          activity: {
+            type: 'string',
+            description: 'What is being arranged, e.g. "lunch this week"',
+          },
+          withinDays: { type: 'integer', minimum: 1 },
+          tone: { type: 'string', enum: ['casual', 'warm', 'formal'] },
           calendarId: { type: 'string' },
           status: {
             type: 'string',

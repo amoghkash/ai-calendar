@@ -263,4 +263,53 @@ CREATE INDEX IF NOT EXISTS event_contact_links_user_idx ON event_contact_links (
 CREATE INDEX IF NOT EXISTS event_contact_links_event_idx ON event_contact_links (event_id);
 `,
   },
+  {
+    id: '0005_outreach',
+    sql: `
+CREATE TABLE IF NOT EXISTS outreach (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  contact_id       TEXT NOT NULL,
+  display_name     TEXT NOT NULL,
+  handle           TEXT NOT NULL,
+  activity         TEXT NOT NULL,
+  duration_minutes INTEGER NOT NULL,
+  proposed_slots   JSONB NOT NULL,
+  message          TEXT NOT NULL,
+  state            TEXT NOT NULL,
+  agreed_slot      JSONB,
+  event_id         TEXT,
+  created_at       BIGINT NOT NULL,
+  updated_at       BIGINT NOT NULL,
+  sent_at          BIGINT,
+  expires_at       BIGINT
+);
+CREATE INDEX IF NOT EXISTS outreach_user_idx ON outreach (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS outreach_state_idx ON outreach (user_id, state);
+`,
+  },
+  {
+    id: '0006_outreach_note',
+    sql: `
+ALTER TABLE outreach ADD COLUMN IF NOT EXISTS note TEXT;
+`,
+  },
+  {
+    id: '0007_outreach_last_reply',
+    sql: `
+ALTER TABLE outreach ADD COLUMN IF NOT EXISTS last_reply_at BIGINT;
+`,
+  },
+  {
+    id: '0008_outreach_clarifications',
+    sql: `
+ALTER TABLE outreach ADD COLUMN IF NOT EXISTS clarifications INTEGER;
+`,
+  },
+  {
+    id: '0009_outreach_kind',
+    sql: `
+ALTER TABLE outreach ADD COLUMN IF NOT EXISTS kind TEXT;
+`,
+  },
 ];

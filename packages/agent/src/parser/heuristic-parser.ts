@@ -133,6 +133,38 @@ export class HeuristicCommandParser implements CommandParser {
       };
     }
 
+    // --- arranging something with a person ----------------------------------
+    // Deliberately after the commitment rule above: "lunch with Sarah at 1pm"
+    // states a time and belongs on the calendar, whereas "lunch with Sarah" has
+    // no time yet and is a message that needs sending.
+    const social =
+      /\b(lunch|dinner|breakfast|brunch|coffee|drinks|a drink|a walk|catch ?up|a chat)\b/.exec(
+        lower,
+      );
+    // Trailing words must be capitalised to join the name, so "sarah tomorrow"
+    // yields "sarah" while "Sarah Chen" stays whole.
+    const withWhom = /\bwith\s+([A-Za-z][\w'\u2019-]*(?:\s+[A-Z][\w'\u2019-]*)*)/.exec(text);
+    if (social && withWhom && !clock) {
+      const person = withWhom[1]!.trim();
+      const qualifier = /\b(this week|next week|this weekend|sometime)\b/.exec(lower)?.[1];
+      const activity = qualifier ? `${social[1]!} ${qualifier}` : social[1]!;
+      // "lunch with Viraj tomorrow" names a day. Dropping it is what offers
+      // Saturday to somebody who asked about Thursday.
+      const when = parseDayRange(lower, request.now, request.timezone);
+      return {
+        commands: [
+          {
+            type: 'schedule_with_person',
+            person,
+            activity,
+            ...(when ? { rangeStart: iso(when.start), rangeEnd: iso(when.end) } : {}),
+          },
+        ],
+        confidence: 0.75,
+        intent: `Arrange ${activity} with ${person}${when ? ` ${when.label}` : ''}`,
+      };
+    }
+
     // --- create a task ------------------------------------------------------
     // Checked before find_time: "I need to finish X, it takes 8 hours" is a
     // new task, while "give me 2 hours for X" is a request for a slot.

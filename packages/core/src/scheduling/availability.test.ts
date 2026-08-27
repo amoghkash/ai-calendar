@@ -189,4 +189,79 @@ describe('computeAvailability', () => {
     // Monday 22:00-00:00, Tuesday 00:00-02:00, Tuesday 22:00-00:00 (clipped).
     expect(result.windows.map((w) => w.dayKey)).toEqual(['2026-03-09', '2026-03-10', '2026-03-10']);
   });
+
+  describe('the waking-hours basis', () => {
+    it('offers the evening, which working hours never can', () => {
+      const result = computeAvailability({
+        range: MONDAY_RANGE,
+        now: MONDAY_RANGE.start,
+        timezone: 'UTC',
+        preferences: basePrefs(),
+        events: [],
+        basis: 'waking_hours',
+      });
+
+      // 17:00-24:00 exists here and cannot exist under working hours; it is
+      // where most plans with other people actually happen.
+      const evening = result.freeIntervals.some(
+        (interval) => interval.end > at('2026-03-09T17:00:00Z'),
+      );
+      expect(evening).toBe(true);
+    });
+
+    it('still refuses to schedule you while you are asleep', () => {
+      const result = computeAvailability({
+        range: MONDAY_RANGE,
+        now: MONDAY_RANGE.start,
+        timezone: 'UTC',
+        preferences: preferencesFixture({
+          timezone: 'UTC',
+          workingHours: weeklySchedule([MONDAY], [dailyWindow('09:00', '17:00')]),
+          sleepHours: weeklySchedule([MONDAY], [dailyWindow('00:00', '07:00')]),
+        }),
+        events: [],
+        basis: 'waking_hours',
+      });
+
+      const asleep = result.freeIntervals.some(
+        (interval) => interval.start < at('2026-03-09T07:00:00Z'),
+      );
+      expect(asleep).toBe(false);
+    });
+
+    it('still keeps clear of a real commitment', () => {
+      const dinner = eventFixture({
+        start: at('2026-03-09T19:00:00Z'),
+        end: at('2026-03-09T20:00:00Z'),
+      });
+      const result = computeAvailability({
+        range: MONDAY_RANGE,
+        now: MONDAY_RANGE.start,
+        timezone: 'UTC',
+        preferences: basePrefs(),
+        events: [dinner],
+        basis: 'waking_hours',
+      });
+
+      const clash = result.freeIntervals.some(
+        (interval) =>
+          interval.start < at('2026-03-09T20:00:00Z') &&
+          at('2026-03-09T19:00:00Z') < interval.end,
+      );
+      expect(clash).toBe(false);
+    });
+
+    it('leaves the working-hours question exactly as it was', () => {
+      const shared = {
+        range: MONDAY_RANGE,
+        now: MONDAY_RANGE.start,
+        timezone: 'UTC',
+        preferences: basePrefs(),
+        events: [],
+      };
+      expect(computeAvailability(shared).freeIntervals).toEqual(
+        computeAvailability({ ...shared, basis: 'working_hours' }).freeIntervals,
+      );
+    });
+  });
 });

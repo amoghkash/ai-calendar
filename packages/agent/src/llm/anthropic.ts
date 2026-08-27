@@ -1,5 +1,7 @@
 import { LLMError } from '@calendar-agent/core';
 import type {
+  LLMMessage,
+  LLMStopReason,
   BaseProviderOptions,
   FetchLike,
   LLMProvider,
@@ -21,6 +23,7 @@ const MODELS_WITHOUT_SAMPLING = /^claude-(opus|sonnet|fable|mythos)-(5|4-[678])/
 interface AnthropicContentBlock {
   type: string;
   text?: string;
+  id?: string;
   name?: string;
   input?: unknown;
 }
@@ -57,7 +60,7 @@ export class AnthropicProvider implements LLMProvider {
       max_tokens: request.maxTokens ?? this.options.maxTokens ?? 2048,
       messages: request.messages
         .filter((message) => message.role !== 'system')
-        .map((message) => ({ role: message.role, content: message.content })),
+        .map((message) => ({ role: message.role, content: toContent(message) })),
     };
     const system = [
       request.system,
@@ -73,6 +76,7 @@ export class AnthropicProvider implements LLMProvider {
     }
 
     if (request.jsonSchema) {
+      // Forcing one tool is the reliable way to get schema-shaped JSON back.
       body.tools = [
         {
           name: request.jsonSchema.name,
@@ -81,6 +85,12 @@ export class AnthropicProvider implements LLMProvider {
         },
       ];
       body.tool_choice = { type: 'tool', name: request.jsonSchema.name };
+    } else if (request.tools && request.tools.length > 0) {
+      body.tools = request.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.schema,
+      }));
     }
 
     const response = await this.fetchImpl(
@@ -118,9 +128,22 @@ export class AnthropicProvider implements LLMProvider {
       ? (toolBlock?.input ?? (textOutput ? extractJson(textOutput) : undefined))
       : undefined;
 
+    // Every tool_use block, not just the first: a turn may ask for several.
+    const toolCalls = request.jsonSchema
+      ? []
+      : blocks
+          .filter((block) => block.type === 'tool_use')
+          .map((block) => ({
+            id: block.id ?? '',
+            name: block.name ?? '',
+            input: block.input,
+          }));
+
     return {
-      text: textOutput.length > 0 ? textOutput : JSON.stringify(json ?? {}),
+      text: textOutput.length > 0 ? textOutput : request.jsonSchema ? JSON.stringify(json ?? {}) : '',
       ...(json === undefined ? {} : { json }),
+      ...(toolCalls.length === 0 ? {} : { toolCalls }),
+      stopReason: stopReasonOf(parsed.stop_reason),
       model: parsed.model ?? this.model,
       usage: {
         inputTokens: parsed.usage?.input_tokens,
@@ -129,4 +152,42 @@ export class AnthropicProvider implements LLMProvider {
       raw: parsed,
     };
   }
+}
+
+/**
+ * One message becomes either a plain string or a list of content blocks.
+ *
+ * Anthropic wants tool results on a *user* turn and tool calls on the
+ * *assistant* turn that made them, each keyed by the same id. Getting that
+ * pairing wrong is the usual reason a tool loop silently stops working.
+ */
+function toContent(message: LLMMessage): unknown {
+  if (message.toolResults && message.toolResults.length > 0) {
+    const blocks: unknown[] = message.toolResults.map((result) => ({
+      type: 'tool_result',
+      tool_use_id: result.toolCallId,
+      content: result.content,
+      ...(result.isError ? { is_error: true } : {}),
+    }));
+    if (message.content.length > 0) blocks.push({ type: 'text', text: message.content });
+    return blocks;
+  }
+
+  if (message.toolCalls && message.toolCalls.length > 0) {
+    const blocks: unknown[] = [];
+    if (message.content.length > 0) blocks.push({ type: 'text', text: message.content });
+    for (const call of message.toolCalls) {
+      blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
+    }
+    return blocks;
+  }
+
+  return message.content;
+}
+
+function stopReasonOf(reason: string | undefined): LLMStopReason {
+  if (reason === 'tool_use') return 'tool_use';
+  if (reason === 'end_turn' || reason === 'stop_sequence') return 'end';
+  if (reason === 'max_tokens') return 'length';
+  return 'other';
 }

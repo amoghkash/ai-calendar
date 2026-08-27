@@ -2,16 +2,42 @@
  * LLM boundary.
  *
  * The intelligence layer is optional: every scheduling decision is made by the
- * deterministic engine. An LLM only translates natural language into typed
- * commands and turns structured explanations into prose. It never mutates the
- * database or a calendar directly.
+ * deterministic engine. A model decides *which* operations to run and in what
+ * order; the operations themselves are ordinary service calls with their own
+ * gates, so a model never mutates a calendar directly and never places a block.
  */
 
 export type LLMRole = 'system' | 'user' | 'assistant';
 
+/** A tool the model asked to run, with the arguments it chose. */
+export interface LLMToolCall {
+  /** Provider-assigned id; the matching result must quote it back. */
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+}
+
+export interface LLMToolResult {
+  readonly toolCallId: string;
+  /** Rendered for the model. Errors are results too, not exceptions. */
+  readonly content: string;
+  readonly isError?: boolean;
+}
+
 export interface LLMMessage {
   readonly role: LLMRole;
   readonly content: string;
+  /** On an assistant turn: what it asked to run. */
+  readonly toolCalls?: readonly LLMToolCall[];
+  /** On a user turn: what came back from the previous assistant turn's calls. */
+  readonly toolResults?: readonly LLMToolResult[];
+}
+
+export interface LLMToolSpec {
+  readonly name: string;
+  readonly description: string;
+  /** JSON Schema for the arguments. */
+  readonly schema: Record<string, unknown>;
 }
 
 export interface JsonSchemaSpec {
@@ -28,6 +54,8 @@ export interface LLMRequest {
   readonly temperature?: number;
   /** When present the provider must return JSON matching this schema. */
   readonly jsonSchema?: JsonSchemaSpec;
+  /** Tools the model may call. Mutually exclusive with `jsonSchema` in practice. */
+  readonly tools?: readonly LLMToolSpec[];
   readonly signal?: AbortSignal;
 }
 
@@ -36,10 +64,16 @@ export interface LLMUsage {
   readonly outputTokens?: number;
 }
 
+/** Why the model stopped. `tool_use` means it is waiting for results. */
+export type LLMStopReason = 'end' | 'tool_use' | 'length' | 'other';
+
 export interface LLMResponse {
   readonly text: string;
   /** Parsed JSON payload when `jsonSchema` was requested. */
   readonly json?: unknown;
+  /** Populated when the model wants tools run before it can answer. */
+  readonly toolCalls?: readonly LLMToolCall[];
+  readonly stopReason?: LLMStopReason;
   readonly model: string;
   readonly usage?: LLMUsage;
   readonly raw?: unknown;

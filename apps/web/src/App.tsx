@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AppState, DataStats, PlanResult, Task, TaskRisk } from './api';
+import type {
+  AppState,
+  DataStats,
+  PendingDeletion,
+  PlanResult,
+  Task,
+  TaskRisk,
+} from './api';
 import { ApiError, api } from './api';
+import { AgendaPanel } from './components/AgendaPanel';
+import { DeletionToast } from './components/DeletionToast';
 import { CalendarSettings } from './components/CalendarSettings';
+import { OutboxPanel } from './components/OutboxPanel';
 import { CategoryPanel } from './components/CategoryPanel';
 import { DataPanel } from './components/DataPanel';
 import { CalendarView } from './components/CalendarView';
@@ -23,7 +33,7 @@ const VIEWS = [
   { days: 7, label: 'Week' },
 ] as const;
 
-type RailTab = 'tasks' | 'calendars';
+type RailTab = 'tasks' | 'calendars' | 'outbox';
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
@@ -37,6 +47,11 @@ export default function App() {
   const [dataStats, setDataStats] = useState<DataStats | null>(null);
   const [dataResult, setDataResult] = useState<string | null>(null);
   const [rail, setRail] = useState<RailTab>('tasks');
+  // The glance page answers "what wants something from me"; the grid answers
+  // "what is on my calendar". Different questions, so a separate view.
+  const [mainView, setMainView] = useState<'grid' | 'agenda'>('grid');
+  // Deletions are deferred for a few seconds; this is the only way back.
+  const [pendingDeletions, setPendingDeletions] = useState<PendingDeletion[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Transient view state, not a stored preference: a moment, not a setting.
   const [hidden, setHidden] = useState({ left: false, right: false });
@@ -176,6 +191,11 @@ export default function App() {
       setThinking(true);
       try {
         const reply = await api.message(text, conversationId);
+        // The agent can delete, so check whether this turn started one.
+        void api
+          .deletions()
+          .then((result) => setPendingDeletions(result.pending))
+          .catch(() => undefined);
         setConversationId(reply.conversationId);
         setMessages((current) => [...current, { role: 'assistant', content: reply.reply }]);
         if (reply.changeSetId && reply.plan && reply.changeSet) {
@@ -262,11 +282,17 @@ export default function App() {
 
         <div className="nav-actions">
           <div className="pill-group" role="group" aria-label="Days to show">
+            <button aria-pressed={mainView === 'agenda'} onClick={() => setMainView('agenda')}>
+              Today
+            </button>
             {VIEWS.map((view) => (
               <button
                 key={view.days}
-                aria-pressed={daysToShow === view.days}
-                onClick={() => setDaysToShow(view.days)}
+                aria-pressed={mainView === 'grid' && daysToShow === view.days}
+                onClick={() => {
+                  setMainView('grid');
+                  setDaysToShow(view.days);
+                }}
               >
                 {view.label}
               </button>
@@ -347,6 +373,9 @@ export default function App() {
               <button aria-pressed={rail === 'calendars'} onClick={() => setRail('calendars')}>
                 Calendars
               </button>
+              <button aria-pressed={rail === 'outbox'} onClick={() => setRail('outbox')}>
+                Outbox
+              </button>
             </div>
           </div>
 
@@ -380,6 +409,15 @@ export default function App() {
               />
               <RiskPanel risks={notableRisks} />
             </>
+          ) : rail === 'outbox' ? (
+            <OutboxPanel
+              timezone={state.timezone}
+              busy={busy}
+              // Booking an accepted time writes an event, so the grid re-reads.
+              onChanged={() => {
+                void refresh().catch((cause: unknown) => setError(describe(cause)));
+              }}
+            />
           ) : (
             <>
               <CalendarSettings
@@ -429,6 +467,15 @@ export default function App() {
         </aside>
 
         <section className="center">
+          {mainView === 'agenda' ? (
+            <AgendaPanel
+              busy={busy}
+              onChanged={() => {
+                void refresh().catch((cause: unknown) => setError(describe(cause)));
+              }}
+              onOpenOutbox={() => setRail('outbox')}
+            />
+          ) : (
           <CalendarView
             state={state}
             calendars={state.calendars}
@@ -452,7 +499,8 @@ export default function App() {
                 }
               : {})}
           />
-          <Legend />
+          )}
+          {mainView === 'grid' && <Legend />}
         </section>
 
         <aside className="rail rail-right">
@@ -508,6 +556,23 @@ export default function App() {
         />
       )}
 
+      <DeletionToast
+        pending={pendingDeletions}
+        busy={busy}
+        onUndo={(token) =>
+          guard(async () => {
+            await api.undoDeletion(token);
+            setPendingDeletions((current) => current.filter((item) => item.token !== token));
+            await refresh();
+          })
+        }
+        onEmpty={() => {
+          // The window has closed; the event is gone and the grid should say so.
+          setPendingDeletions([]);
+          void refresh().catch(() => undefined);
+        }}
+      />
+
       {editing && (
         <EntryEditor
           target={editing}
@@ -517,7 +582,15 @@ export default function App() {
           onClose={() => setEditing(null)}
           onCreate={(input) => mutate(() => api.createEvent(input))}
           onUpdateEvent={(id, changes) => mutate(() => api.updateEvent(id, changes))}
-          onDeleteEvent={(id, notify) => mutate(() => api.deleteEvent(id, notify))}
+          onDeleteEvent={(id, notify) =>
+            // Deferred, like the agent's: the toast is the way back.
+            guard(async () => {
+              const pending = await api.deleteEventSoon(id, notify);
+              setPendingDeletions((current) => [...current, pending]);
+              setEditing(null);
+              await refresh();
+            })
+          }
           onMoveBlock={(id, start, end) => mutate(() => api.moveBlock(id, start, end))}
           onPinBlock={(id, pinned) => mutate(() => api.pinBlock(id, pinned))}
           onDeleteBlock={(id) => mutate(() => api.deleteBlock(id))}

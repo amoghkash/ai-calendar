@@ -54,6 +54,7 @@ export function EventPeople({ eventId, timezone, busy, onChanged }: Props) {
   const [searching, setSearching] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [drafted, setDrafted] = useState<string | null>(null);
   // Guards against a slow search landing after a newer one.
   const searchId = useRef(0);
 
@@ -172,6 +173,30 @@ export function EventPeople({ eventId, timezone, busy, onChanged }: Props) {
           })}
         </ul>
       )}
+
+      {!loading && people.length > 0 && (
+        <div className="people-ask">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() =>
+              void act(async () => {
+                const result = await api.confirmMeeting(eventId);
+                setDrafted(result.outreach?.message ?? null);
+              })
+            }
+            title={`Text ${people[0]?.link.displayName ?? 'them'} to ask if this still stands`}
+          >
+            <Icon name="send" size={15} />
+            Ask if still on
+          </button>
+          {drafted !== null && (
+            <span className="people-hint">Drafted - send it from the Outbox.</span>
+          )}
+        </div>
+      )}
+
+      {drafted !== null && <p className="outreach-message">{drafted}</p>}
 
       {!loading && people.length > 0 && (
         <p className="note">

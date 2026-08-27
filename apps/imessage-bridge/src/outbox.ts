@@ -40,7 +40,14 @@ interface AuditEntry {
   readonly text?: string;
 }
 
-/** Sends that actually reached Messages.app, and so count against the caps. */
+/**
+ * Sends that actually reached Messages.app.
+ *
+ * The single source of truth for both questions that matter: what counts
+ * against the daily caps, and what blocks a retry. They must agree - if
+ * dedup counted attempts the caps ignored, a simulated send would silently
+ * prevent the real one.
+ */
 const DISPATCHED: readonly SendStatus[] = ['sent', 'unconfirmed'];
 
 const dayKey = (ms: number): string => {
@@ -100,7 +107,12 @@ export class Outbox {
 
   async send(request: SendRequest): Promise<SendResult> {
     const existing = this.results.get(request.idempotencyKey);
-    if (existing) return { ...existing, status: 'duplicate' };
+    // Only a message that actually went out may block a retry. A dry run or a
+    // capped attempt reached nobody, so refusing the real send afterwards would
+    // mean the safety switch permanently poisons the very message it protected.
+    if (existing && DISPATCHED.includes(existing.status)) {
+      return { ...existing, status: 'duplicate' };
+    }
 
     const { normalized } = normalizeHandle(request.to, this.options.region);
     const simulated = request.dryRun === true || !this.options.sendEnabled;

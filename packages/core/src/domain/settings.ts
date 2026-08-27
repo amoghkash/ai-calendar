@@ -1,3 +1,4 @@
+import type { OutreachTone } from './outreach.js';
 import type { LogLevel } from '../logging/logger.js';
 import type { Instant } from '../time/instant.js';
 import type { UserId } from './ids.js';
@@ -60,9 +61,18 @@ export interface AppSettings {
   readonly llm: LLMSettings;
   readonly logLevel: LogLevel;
   readonly weekStart: WeekStart;
+  /** Default voice for messages sent to other people. */
+  readonly outreachTone: OutreachTone;
   readonly updatedAt: Instant;
 }
 
 export function defaultAppSettings(userId: UserId, updatedAt: Instant = 0): AppSettings {
-  return { userId, llm: DEFAULT_LLM_SETTINGS, logLevel: 'info', weekStart: 'rolling', updatedAt };
+  return {
+    userId,
+    llm: DEFAULT_LLM_SETTINGS,
+    logLevel: 'info',
+    weekStart: 'rolling',
+    outreachTone: 'casual',
+    updatedAt,
+  };
 }

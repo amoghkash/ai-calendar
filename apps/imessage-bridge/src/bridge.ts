@@ -38,11 +38,16 @@ export async function createBridge(
     new OsascriptContactSource(config.contactsDumpTimeoutMs, config.contactsProbeTimeoutMs);
 
   const contacts = new ContactDirectory(contactSource, config.region, config.contactsCacheTtlMs, now);
-  const threads = new ThreadService(runner, {
-    region: config.region,
-    chatScanLimit: config.chatScanLimit,
-    historyScanLimit: config.historyScanLimit,
-  });
+  const threads = new ThreadService(
+    runner,
+    {
+      region: config.region,
+      chatScanLimit: config.chatScanLimit,
+      historyScanLimit: config.historyScanLimit,
+      missTtlMs: config.missTtlMs,
+    },
+    now,
+  );
   const outbox = new Outbox(runner, config, now);
   await outbox.load();
 

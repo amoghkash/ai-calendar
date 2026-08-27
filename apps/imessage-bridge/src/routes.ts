@@ -71,7 +71,8 @@ export function buildRoutes(bridge: Bridge): Router {
     '/threads',
     asyncRoute(async (req, res) => {
       const handle = requireString(req.query.handle, 'handle');
-      res.json(await bridge.threads.state(handle));
+      const since = optionalInt(req.query.since, 0, Number.MAX_SAFE_INTEGER);
+      res.json(await bridge.threads.state(handle, since === 0 ? undefined : since));
     }),
   );
 

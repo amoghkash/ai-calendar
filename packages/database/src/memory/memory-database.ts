@@ -13,6 +13,7 @@ import type {
   Database,
   EventContactLinkRepository,
   EventQuery,
+  OutreachRepository,
   EventSyncRecord,
   PreferencesRepository,
   SettingsRepository,
@@ -52,6 +53,7 @@ export class MemoryDatabase implements Database {
   readonly accounts: CalendarAccountRepository;
   readonly categories: CategoryRepository;
   readonly contactLinks: EventContactLinkRepository;
+  readonly outreach: OutreachRepository;
   readonly preferences: PreferencesRepository;
   readonly settings: SettingsRepository;
   readonly syncState: SyncStateRepository;
@@ -290,6 +292,30 @@ export class MemoryDatabase implements Database {
       },
       async deleteByEvent(eventId) {
         remove(data().contactLinks, (l) => l.eventId === eventId);
+        await persist();
+      },
+    };
+
+    this.outreach = {
+      async get(id) {
+        return data().outreach.find((o) => o.id === id);
+      },
+      async list(query) {
+        return data()
+          .outreach.filter(
+            (o) =>
+              o.userId === query.userId &&
+              (query.states === undefined || query.states.includes(o.state)),
+          )
+          .sort((a, b) => b.createdAt - a.createdAt);
+      },
+      async save(outreach) {
+        upsert(data().outreach, outreach, (o) => o.id === outreach.id);
+        await persist();
+        return outreach;
+      },
+      async delete(id) {
+        remove(data().outreach, (o) => o.id === id);
         await persist();
       },
     };

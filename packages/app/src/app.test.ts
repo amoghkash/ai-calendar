@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { instantFromISO, instantToISO } from '@calendar-agent/core';
 import { mockEvent } from '@calendar-agent/integrations';
-import { MockLLMProvider } from '@calendar-agent/agent';
+import { MockLLMProvider, mockText, mockToolCalls } from '@calendar-agent/agent';
 import type { TestApp } from './testing.js';
 import { createTestApp } from './testing.js';
 
@@ -252,29 +252,36 @@ describe('agent service', () => {
     expect(result.reply).toContain('Algorithms assignment');
   });
 
-  it('creates a task from an LLM-produced command plan', async () => {
+  it('creates a task and schedules it by calling tools in turn', async () => {
+    // A configured model now drives the turn by calling tools and reading the
+    // results, rather than emitting one fixed command plan.
     const llm = new MockLLMProvider([
-      {
-        intent: 'Create the ML project and schedule it',
-        commands: [
-          {
-            type: 'create_task',
+      mockToolCalls([
+        {
+          name: 'create_task',
+          input: {
             title: 'Machine learning project',
             estimatedMinutes: 480,
             deadline: '2026-03-12T23:59:00Z',
           },
-          { type: 'schedule' },
-        ],
-      },
+        },
+      ]),
+      mockToolCalls([{ name: 'plan_schedule', input: {} }]),
+      mockText('Added it and found time for it.'),
     ]);
     const harness = await createTestApp({ llm });
+
     const result = await harness.app.agent.handle({
       userId: harness.userId,
       text: 'I need to finish my machine learning project by Thursday. It will take about 8 hours.',
     });
-    expect(result.source).toBe('llm');
-    expect(result.createdTasks?.[0]!.estimatedMinutes).toBe(480);
-    expect(result.plan!.blocks.length).toBeGreaterThan(0);
+
+    expect(result.reply).toBe('Added it and found time for it.');
+    const tasks = await harness.app.tasks.list(harness.userId);
+    expect(tasks[0]?.estimatedMinutes).toBe(480);
+    // plan_schedule proposes; nothing is written until approval.
+    const pending = await harness.app.db.changeSets.list(harness.userId);
+    expect(pending.length).toBeGreaterThan(0);
   });
 
   it('moves a task when told when to do it', async () => {

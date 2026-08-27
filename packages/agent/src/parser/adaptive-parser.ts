@@ -14,6 +14,23 @@ import type { CommandParser, ParseRequest, ParseResult } from './types.js';
  * about. If the model is configured but unreachable, that is reported rather
  * than papered over with a guess.
  */
+/**
+ * The same refusal, whichever path was driving.
+ *
+ * While a model is configured it handles every request, so a broken one must
+ * fail loudly: quietly answering with the rule parser would make a
+ * misconfigured key look like a working assistant that had simply got worse.
+ */
+export function modelUnavailable(provider: string, model: string, cause: unknown): LLMError {
+  const reason = cause instanceof Error ? cause.message : String(cause);
+  return new LLMError(
+    `${provider} (${model}) could not interpret that request: ${reason}. ` +
+      'While a model is configured it handles every request, so nothing was guessed. ' +
+      'Retry, or set the provider to "none" in Settings to use the built-in rule parser.',
+    { details: { provider, model }, cause },
+  );
+}
+
 export class AdaptiveCommandParser implements CommandParser {
   readonly name = 'adaptive';
   private readonly llmParser: CommandParser;
@@ -38,13 +55,7 @@ export class AdaptiveCommandParser implements CommandParser {
       return await this.llmParser.parse(request);
     } catch (error) {
       this.onFailure?.(error);
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new LLMError(
-        `${this.llm.name} (${this.llm.model}) could not interpret that request: ${reason}. ` +
-          'While a model is configured it handles every request, so nothing was guessed. ' +
-          'Retry, or set the provider to "none" in Settings to use the built-in rule parser.',
-        { details: { provider: this.llm.name, model: this.llm.model }, cause: error },
-      );
+      throw modelUnavailable(this.llm.name, this.llm.model, error);
     }
   }
 }

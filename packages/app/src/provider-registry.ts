@@ -53,6 +53,8 @@ export interface ProviderRegistryOptions {
  */
 export class DefaultProviderRegistry implements ProviderRegistry {
   private readonly tokens: TokenStore;
+  /** Mock providers only; see `create`. */
+  private readonly mocks = new Map<string, CalendarProvider>();
 
   constructor(private readonly options: ProviderRegistryOptions) {
     this.tokens = new DatabaseTokenStore(options.db);
@@ -89,7 +91,18 @@ export class DefaultProviderRegistry implements ProviderRegistry {
     const override = this.options.overrides?.[account.id];
     if (override) return override;
 
-    if (account.provider === PROVIDER_MOCK) return new MockCalendarProvider();
+    if (account.provider === PROVIDER_MOCK) {
+      // The mock keeps its events in memory, so a fresh instance per call would
+      // forget everything created through a previous one - deletes and updates
+      // then fail against a provider that has never heard of the event. Real
+      // providers are stateless HTTP clients and are deliberately not cached,
+      // so their credentials stay per-request.
+      const existing = this.mocks.get(account.id);
+      if (existing) return existing;
+      const created = new MockCalendarProvider();
+      this.mocks.set(account.id, created);
+      return created;
+    }
 
     const oauth = this.oauth(account.provider);
     if (!oauth) {

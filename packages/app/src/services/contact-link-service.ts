@@ -9,7 +9,9 @@ import type {
   Logger,
   MessagingCapabilities,
   MessagingProvider,
+  Instant,
   ThreadPosture,
+  ThreadSnapshot,
   UserId,
 } from '@calendar-agent/core';
 import {
@@ -64,7 +66,25 @@ export interface LinkedPerson {
  * directory returns candidates, a human confirms, and the confirmed handle is
  * what gets stored.
  */
+/**
+ * How long a thread snapshot stays usable.
+ *
+ * Short, because it decides whether a page says somebody has replied. Long
+ * enough that a glance page refreshing every half minute does not re-ask the
+ * bridge about every person each time.
+ */
+const THREAD_CACHE_MS = 60_000;
+
+interface CachedThread {
+  readonly snapshot: ThreadSnapshot | undefined;
+  /** The floor it was fetched with; see `peopleOnEvent` for why it matters. */
+  readonly since: Instant;
+  readonly at: Instant;
+}
+
 export class ContactLinkService {
+  private readonly threads = new Map<string, CachedThread>();
+
   constructor(
     private readonly db: Database,
     private readonly preferences: PreferencesService,
@@ -211,27 +231,64 @@ export class ContactLinkService {
     const event = await this.db.events.get(eventId);
     const since = event?.createdAt ?? 0;
 
-    const people: LinkedPerson[] = [];
-    for (const link of links) {
-      let snapshot;
-      try {
-        snapshot = await this.messaging?.thread(link.handle);
-      } catch (error) {
-        this.logger.debug?.('contacts.thread_unavailable', {
-          message: error instanceof Error ? error.message : String(error),
-        });
-        snapshot = undefined;
-      }
-      people.push({
-        link,
-        posture: threadPosture(snapshot, since),
-        ...(snapshot?.lastInboundAt === undefined ? {} : { lastInboundAt: snapshot.lastInboundAt }),
-        ...(snapshot?.lastOutboundAt === undefined
-          ? {}
-          : { lastOutboundAt: snapshot.lastOutboundAt }),
-      });
+    // In parallel: each of these is a round trip to the bridge, and asking
+    // about three people one after another is three times the wait.
+    return Promise.all(
+      links.map(async (link) => {
+        const snapshot = await this.threadFor(link.handle, since);
+        return {
+          link,
+          posture: threadPosture(snapshot, since),
+          ...(snapshot?.lastInboundAt === undefined
+            ? {}
+            : { lastInboundAt: snapshot.lastInboundAt }),
+          ...(snapshot?.lastOutboundAt === undefined
+            ? {}
+            : { lastOutboundAt: snapshot.lastOutboundAt }),
+        };
+      }),
+    );
+  }
+
+  /**
+   * A thread snapshot, from cache when it can be.
+   *
+   * `since` lets the bridge answer "nothing new" without reading the
+   * conversation, which is by far the expensive half. The catch is that a
+   * snapshot fetched that way carries no per-direction timestamps, so it is
+   * only reusable for a floor at least as late as the one it was fetched with:
+   * "nothing since Tuesday" also settles "nothing since Wednesday", but says
+   * nothing about Monday.
+   */
+  private async threadFor(
+    handle: string,
+    since: Instant,
+  ): Promise<ThreadSnapshot | undefined> {
+    if (!this.messaging) return undefined;
+    const now = this.clock.now();
+    const cached = this.threads.get(handle);
+    if (cached && now - cached.at < THREAD_CACHE_MS && since >= cached.since) {
+      return cached.snapshot;
     }
-    return people;
+
+    let snapshot: ThreadSnapshot | undefined;
+    try {
+      snapshot = await this.messaging.thread(handle, since);
+    } catch (error) {
+      this.logger.debug?.('contacts.thread_unavailable', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      // Cache the absence too: an unknown handle is the expensive lookup, and
+      // repeating it on every refresh is what made the page slow.
+      snapshot = undefined;
+    }
+    this.threads.set(handle, { snapshot, since, at: now });
+    return snapshot;
+  }
+
+  /** Drop cached thread state, so the next read is fresh. */
+  forgetThread(handle: string): void {
+    this.threads.delete(handle);
   }
 
   /**

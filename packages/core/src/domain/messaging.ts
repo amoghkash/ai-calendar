@@ -27,6 +27,14 @@ export interface ThreadSnapshot {
   readonly lastOutboundAt?: Instant;
 }
 
+export interface ThreadMessage {
+  readonly id: number;
+  readonly at: Instant;
+  readonly direction: 'inbound' | 'outbound';
+  readonly text: string;
+  readonly senderName?: string;
+}
+
 /**
  * What is knowable about whether a plan is confirmed, without reading a word.
  *

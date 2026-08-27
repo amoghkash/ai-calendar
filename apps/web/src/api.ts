@@ -88,6 +88,94 @@ export interface LinkSuggestion {
   contacts: DirectoryContact[];
 }
 
+export type OutreachState =
+  | 'draft'
+  | 'sent'
+  | 'needs_you'
+  | 'agreed'
+  | 'booked'
+  | 'declined'
+  | 'expired'
+  | 'cancelled';
+
+/** A message offering someone times, and where that conversation has got to. */
+export interface Outreach {
+  id: string;
+  contactId: string;
+  displayName: string;
+  handle: string;
+  activity: string;
+  durationMinutes: number;
+  proposedSlots: { start: number; end: number }[];
+  message: string;
+  state: OutreachState;
+  agreedSlot?: { start: number; end: number };
+  eventId?: string;
+  note?: string;
+  createdAt: number;
+  updatedAt: number;
+  sentAt?: number;
+  expiresAt?: number;
+  lastReplyAt?: number;
+  clarifications?: number;
+}
+
+export interface TodayPerson {
+  name: string;
+  handle: string;
+  posture: ThreadPosture;
+}
+
+export interface TodayEntry {
+  id: string;
+  kind: 'event' | 'block';
+  title: string;
+  start: number;
+  end: number;
+  isAllDay: boolean;
+  classification?: string;
+  people: TodayPerson[];
+  canConfirm: boolean;
+  confirmation?: { id: string; state: string };
+}
+
+export interface TodayAction {
+  id: string;
+  kind: 'needs_you' | 'unsent_draft';
+  person: string;
+  summary: string;
+  note?: string;
+}
+
+/** The day arranged around what wants an answer, not just what exists. */
+export interface TodayView {
+  now: number;
+  timezone: string;
+  dayStart: number;
+  dayEnd: number;
+  entries: TodayEntry[];
+  next?: TodayEntry;
+  freeWindows: { start: number; end: number }[];
+  actions: TodayAction[];
+  risks: TaskRisk[];
+  pendingChangeSetId?: string;
+}
+
+/** An event on its way out, still inside the window where it can be kept. */
+export interface PendingDeletion {
+  token: string;
+  eventId: string;
+  title: string;
+  deletesAt: number;
+}
+
+export interface OutreachStatus {
+  poller: { enabled: boolean; intervalMinutes: number; running: boolean };
+  waiting: number;
+  /** False when the bridge cannot send; the panel falls back to copy-and-paste. */
+  canSend: boolean;
+}
+
 export interface LinkedPerson {
   link: EventContactLink;
   posture: ThreadPosture;
@@ -561,6 +649,27 @@ export const api = {
   // Linking is a local annotation. Nothing here sends a message or an invite:
   // the bridge's outbox is not reachable from this API at all.
   messagingStatus: () => request<MessagingStatus>('/messaging/status'),
+
+  // --- outreach -------------------------------------------------------------
+  // Nothing here sends a message. `sent` records that a human did.
+  today: () => request<TodayView>('/today'),
+  // Undo is a human action: the agent can delete but has no tool to reverse it.
+  deletions: () => request<{ pending: PendingDeletion[] }>('/deletions'),
+  /** Schedules the deletion and returns the window; nothing is removed yet. */
+  deleteEventSoon: (id: string, notifyAttendees: boolean) =>
+    request<PendingDeletion>(`/events/${id}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ notifyAttendees }),
+    }),
+  undoDeletion: (token: string) =>
+    request<PendingDeletion>(`/deletions/${token}/undo`, { method: 'POST' }),
+  outreach: () => request<{ outreach: Outreach[] }>('/outreach'),
+  outreachStatus: () => request<OutreachStatus>('/outreach/status'),
+  sendOutreach: (id: string) => request<Outreach>(`/outreach/${id}/send`, { method: 'POST' }),
+  markOutreachSent: (id: string) => request<Outreach>(`/outreach/${id}/sent`, { method: 'POST' }),
+  cancelOutreach: (id: string) => request<Outreach>(`/outreach/${id}`, { method: 'DELETE' }),
+  recordOutreachReply: (id: string, text: string) =>
+    request<Outreach>(`/outreach/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) }),
   searchContacts: (query: string, limit = 8) =>
     request<{ contacts: DirectoryContact[] }>(
       `/contacts?q=${encodeURIComponent(query)}&limit=${limit}`,
@@ -573,6 +682,10 @@ export const api = {
     ),
   eventPeople: (eventId: string) =>
     request<{ people: LinkedPerson[] }>(`/events/${eventId}/people`),
+  confirmMeeting: (eventId: string) =>
+    request<{ kind: string; outreach?: Outreach }>(`/events/${eventId}/confirm`, {
+      method: 'POST',
+    }),
   eventPeopleSuggestions: (eventId: string) =>
     request<{ suggestions: LinkSuggestion[] }>(`/events/${eventId}/people/suggestions`),
   linkPerson: (

@@ -1,15 +1,36 @@
 import { Router } from 'express';
-import type { AppContext, BackgroundSync, DataScope } from '@calendar-agent/app';
+import type { AppContext, BackgroundSync, DataScope, OutreachPoller } from '@calendar-agent/app';
 import { DATA_SCOPES, dailyWindowList, weekdayList } from '@calendar-agent/app';
-import type { Attendee, Interval, Task, Transparency } from '@calendar-agent/core';
+import type {
+  Attendee,
+  AvailabilityBasis,
+  Interval,
+  OutreachTone,
+  Task,
+  Transparency,
+} from '@calendar-agent/core';
 import {
+  OUTREACH_TONES,
   ValidationError,
+  isOutreachTone,
   days,
   instantFromISO,
   localDayInterval,
   localDayKey,
 } from '@calendar-agent/core';
 import { asyncRoute } from './http-errors.js';
+
+/** Reject an unknown tone rather than silently falling back to the default. */
+function parseTone(value: unknown): OutreachTone {
+  if (isOutreachTone(value)) return value;
+  throw new ValidationError(`"tone" must be one of: ${OUTREACH_TONES.join(', ')}.`);
+}
+
+/** Reject an unknown basis rather than silently falling back to the default. */
+function parseBasis(value: unknown): AvailabilityBasis {
+  if (value === 'working_hours' || value === 'waking_hours') return value;
+  throw new ValidationError('"basis" must be "working_hours" or "waking_hours".');
+}
 
 function range(query: Record<string, unknown>, now: number, defaultDays: number): Interval {
   const start = typeof query.start === 'string' ? instantFromISO(query.start) : now;
@@ -62,7 +83,11 @@ function parseTransparency(value: unknown): Transparency | undefined {
  * REST surface for the web UI. Every handler delegates to an application
  * service - the same ones the CLI uses - so behaviour cannot diverge.
  */
-export function buildRoutes(app: AppContext, backgroundSync?: BackgroundSync): Router {
+export function buildRoutes(
+  app: AppContext,
+  backgroundSync?: BackgroundSync,
+  outreachPoller?: OutreachPoller,
+): Router {
   const router = Router();
   const userId = app.user.id;
 
@@ -618,6 +643,13 @@ export function buildRoutes(app: AppContext, backgroundSync?: BackgroundSync): R
     }),
   );
 
+  router.post(
+    '/events/:id/confirm',
+    asyncRoute(async (req, res) => {
+      res.json(await app.outreach.confirmMeeting(userId, req.params.id!));
+    }),
+  );
+
   router.get(
     '/events/:id/people/suggestions',
     asyncRoute(async (req, res) => {
@@ -641,6 +673,114 @@ export function buildRoutes(app: AppContext, backgroundSync?: BackgroundSync): R
           displayName: typeof body.displayName === 'string' ? body.displayName : body.handle,
         }),
       );
+    }),
+  );
+
+  // ---- outreach ------------------------------------------------------------
+  // Drafts only. Nothing here sends a message; `sent` records that a human did.
+  router.post(
+    '/events/:id/delete',
+    asyncRoute(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      res.json(
+        await app.deletions.schedule(userId, req.params.id!, {
+          ...(typeof body.notifyAttendees === 'boolean'
+            ? { notifyAttendees: body.notifyAttendees }
+            : {}),
+        }),
+      );
+    }),
+  );
+
+  router.post(
+    '/deletions/:token/undo',
+    asyncRoute(async (req, res) => {
+      res.json(app.deletions.undo(userId, req.params.token!));
+    }),
+  );
+
+  router.get(
+    '/deletions',
+    asyncRoute(async (_req, res) => {
+      res.json({ pending: app.deletions.pending(userId) });
+    }),
+  );
+
+  router.get(
+    '/today',
+    asyncRoute(async (_req, res) => {
+      res.json(await app.today.get(userId));
+    }),
+  );
+
+  router.get(
+    '/outreach/status',
+    asyncRoute(async (_req, res) => {
+      res.json({
+        poller: outreachPoller?.status() ?? { enabled: false, intervalMinutes: 0, running: false },
+        canSend: app.outreach.canSend,
+        waiting: (await app.outreach.list(userId, ['sent', 'needs_you'])).length,
+      });
+    }),
+  );
+
+  router.get(
+    '/outreach',
+    asyncRoute(async (_req, res) => {
+      res.json({ outreach: await app.outreach.list(userId) });
+    }),
+  );
+
+  router.post(
+    '/outreach',
+    asyncRoute(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof body.person !== 'string' || typeof body.activity !== 'string') {
+        throw new ValidationError('An outreach needs a person and an activity.');
+      }
+      const outcome = await app.outreach.draft({
+        userId,
+        person: body.person,
+        activity: body.activity,
+        ...(typeof body.durationMinutes === 'number'
+          ? { durationMinutes: body.durationMinutes }
+          : {}),
+        ...(typeof body.withinDays === 'number' ? { withinDays: body.withinDays } : {}),
+        ...(body.basis === undefined ? {} : { basis: parseBasis(body.basis) }),
+        ...(body.tone === undefined ? {} : { tone: parseTone(body.tone) }),
+      });
+      // A question is not a failure: 200 with what needs answering.
+      res.status(outcome.kind === 'drafted' ? 201 : 200).json(outcome);
+    }),
+  );
+
+  router.post(
+    '/outreach/:id/send',
+    asyncRoute(async (req, res) => {
+      res.json(await app.outreach.send(userId, req.params.id!));
+    }),
+  );
+
+  router.post(
+    '/outreach/:id/reply',
+    asyncRoute(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof body.text !== 'string') throw new ValidationError('A reply needs text.');
+      res.json(await app.outreach.recordReply(userId, req.params.id!, body.text));
+    }),
+  );
+
+  router.post(
+    '/outreach/:id/sent',
+    asyncRoute(async (req, res) => {
+      res.json(await app.outreach.markSent(userId, req.params.id!));
+    }),
+  );
+
+  router.delete(
+    '/outreach/:id',
+    asyncRoute(async (req, res) => {
+      res.json(await app.outreach.cancel(userId, req.params.id!));
     }),
   );
 

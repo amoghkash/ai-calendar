@@ -28,6 +28,19 @@ export interface FreeWindow extends Interval {
   readonly deepWork: boolean;
 }
 
+/**
+ * What counts as time you could in principle use.
+ *
+ * `working_hours` is right for work: the scheduler places task blocks, and it
+ * has no business filling your evening. `waking_hours` is right for everything
+ * else - a friend's lunch on a Saturday, dinner at 7 - where the working-hours
+ * basis would report no availability at all and be confidently wrong about it.
+ *
+ * Sleep, recurring blocks, blocked periods and real events are subtracted from
+ * either basis, so `waking_hours` is a wider question, not a laxer one.
+ */
+export type AvailabilityBasis = 'working_hours' | 'waking_hours';
+
 export interface AvailabilityRequest {
   readonly range: Interval;
   readonly now: Instant;
@@ -36,12 +49,15 @@ export interface AvailabilityRequest {
   readonly events: readonly CalendarEvent[];
   /** Already-committed time (retained task blocks, pending placements). */
   readonly reserved?: readonly Interval[];
+  /** Defaults to `working_hours`, which is what task scheduling wants. */
+  readonly basis?: AvailabilityBasis;
 }
 
 export interface AvailabilityResult {
   readonly windows: readonly FreeWindow[];
   /** Free time before it is split by local day and deep-work boundaries. */
   readonly freeIntervals: readonly Interval[];
+  /** The basis before anything was subtracted from it. */
   readonly workingIntervals: readonly Interval[];
   readonly busyIntervals: readonly Interval[];
   readonly deepWorkIntervals: readonly Interval[];
@@ -71,7 +87,12 @@ export function computeAvailability(request: AvailabilityRequest): AvailabilityR
     };
   }
 
-  const working = expandWeeklySchedule(prefs.workingHours, effectiveRange, timezone);
+  // The whole span for a waking-hours question; sleep and commitments are
+  // subtracted below either way.
+  const working =
+    request.basis === 'waking_hours'
+      ? [effectiveRange]
+      : expandWeeklySchedule(prefs.workingHours, effectiveRange, timezone);
   const sleep = expandWeeklySchedule(prefs.sleepHours, effectiveRange, timezone);
   const recurring = expandWeeklySchedule(prefs.recurringBlocks, effectiveRange, timezone);
   const oneOff = prefs.blockedPeriods

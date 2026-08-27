@@ -27,6 +27,8 @@ export interface BridgeConfig {
   /** How many messages to read when deriving per-direction timestamps. */
   readonly historyScanLimit: number;
   readonly imsgTimeoutMs: number;
+  /** How long to remember that a handle has no conversation. */
+  readonly missTtlMs: number;
   /** Full address-book dump. AppleScript iterating every person is slow. */
   readonly contactsDumpTimeoutMs: number;
   /** Liveness probe used by /health, which must stay fast. */
@@ -70,6 +72,7 @@ export function loadBridgeConfig(env: NodeJS.ProcessEnv = process.env): BridgeCo
     chatScanLimit: int(env.IMESSAGE_BRIDGE_CHAT_SCAN_LIMIT, 400),
     historyScanLimit: int(env.IMESSAGE_BRIDGE_HISTORY_SCAN_LIMIT, 40),
     imsgTimeoutMs: int(env.IMESSAGE_BRIDGE_IMSG_TIMEOUT_MS, 20_000),
+    missTtlMs: int(env.IMESSAGE_BRIDGE_MISS_TTL_SECONDS, 300) * 1000,
     contactsDumpTimeoutMs: int(env.IMESSAGE_BRIDGE_CONTACTS_TIMEOUT_MS, 30_000),
     contactsProbeTimeoutMs: int(env.IMESSAGE_BRIDGE_CONTACTS_PROBE_TIMEOUT_MS, 10_000),
   };

@@ -6,11 +6,13 @@ import type {
 } from '../domain/calendar.js';
 import type { Category } from '../domain/category.js';
 import type { EventContactLink } from '../domain/contact.js';
+import type { Outreach, OutreachState } from '../domain/outreach.js';
 import type {
   CalendarAccountId,
   CalendarId,
   EventContactLinkId,
   EventId,
+  OutreachId,
   TaskId,
   UserId,
 } from '../domain/ids.js';
@@ -111,6 +113,18 @@ export interface EventContactLinkRepository {
   deleteByEvent(eventId: EventId): Promise<void>;
 }
 
+export interface OutreachQuery {
+  readonly userId: UserId;
+  readonly states?: readonly OutreachState[];
+}
+
+export interface OutreachRepository {
+  get(id: OutreachId): Promise<Outreach | undefined>;
+  list(query: OutreachQuery): Promise<Outreach[]>;
+  save(outreach: Outreach): Promise<Outreach>;
+  delete(id: OutreachId): Promise<void>;
+}
+
 export interface CategoryRepository {
   get(id: string): Promise<Category | undefined>;
   list(userId: UserId): Promise<Category[]>;
@@ -200,6 +214,7 @@ export interface Database {
   readonly accounts: CalendarAccountRepository;
   readonly categories: CategoryRepository;
   readonly contactLinks: EventContactLinkRepository;
+  readonly outreach: OutreachRepository;
   readonly preferences: PreferencesRepository;
   readonly settings: SettingsRepository;
   readonly syncState: SyncStateRepository;

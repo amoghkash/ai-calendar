@@ -206,6 +206,40 @@ describe('bridge HTTP surface', () => {
     expect(body.lastOutboundAt).toBe(Date.parse('2026-08-24T10:00:00Z'));
   });
 
+  it('answers "nothing new" without reading the conversation', async () => {
+    const runner = new FakeImsgRunner({
+      '--version': ok('imsg 0.5.1'),
+      chats: ok(CHATS),
+      history: ok(HISTORY),
+    });
+    const { api } = await start({}, { runner });
+
+    // The chat's newest message is 2026-08-25T18:00Z; ask about anything after.
+    const since = Date.parse('2026-08-26T00:00:00Z');
+    const { body } = await api(`/threads?handle=%2B14155551212&since=${since}`);
+
+    expect(body.chatId).toBe(42);
+    expect(body.lastMessageAt).toBe(Date.parse('2026-08-25T18:00:00Z'));
+    // The expensive call is the point: it must not have happened.
+    expect(body.lastInboundAt).toBeUndefined();
+    expect(runner.calls.some((call) => call[0] === 'history')).toBe(false);
+  });
+
+  it('still reads the conversation when something is newer', async () => {
+    const runner = new FakeImsgRunner({
+      '--version': ok('imsg 0.5.1'),
+      chats: ok(CHATS),
+      history: ok(HISTORY),
+    });
+    const { api } = await start({}, { runner });
+
+    const since = Date.parse('2026-08-01T00:00:00Z');
+    const { body } = await api(`/threads?handle=%2B14155551212&since=${since}`);
+
+    expect(body.lastInboundAt).toBe(Date.parse('2026-08-25T18:00:00Z'));
+    expect(runner.calls.some((call) => call[0] === 'history')).toBe(true);
+  });
+
   it('does not match a group chat containing the handle', async () => {
     const { api } = await start();
     const { body } = await api('/threads?handle=%2B14155550000');
@@ -242,5 +276,55 @@ describe('bridge HTTP surface', () => {
 
     expect(status).toBe(400);
     expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('does not rescan the chat list for a handle it already knows has no thread', async () => {
+    const runner = new FakeImsgRunner({
+      '--version': ok('imsg 0.5.1'),
+      chats: ok(CHATS),
+      history: ok(HISTORY),
+    });
+    const { api } = await start({}, { runner });
+
+    await api('/threads?handle=%2B15550000000');
+    const afterFirst = runner.calls.filter((call) => call[0] === 'chats').length;
+    await api('/threads?handle=%2B15550000000');
+    await api('/threads?handle=%2B15550000000');
+
+    // The worst case - a handle nobody has ever messaged - was paying a full
+    // scan every single time.
+    expect(afterFirst).toBe(1);
+    expect(runner.calls.filter((call) => call[0] === 'chats')).toHaveLength(1);
+  });
+
+  it('still answers 404 for a handle with no thread', async () => {
+    const runner = new FakeImsgRunner({
+      '--version': ok('imsg 0.5.1'),
+      chats: ok(CHATS),
+      history: ok(HISTORY),
+    });
+    const { api } = await start({}, { runner });
+
+    const first = await api('/threads?handle=%2B15550000000');
+    const second = await api('/threads?handle=%2B15550000000');
+
+    expect(first.status).toBe(404);
+    expect(second.status).toBe(404);
+    expect(second.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('forgets the miss once its life is up', async () => {
+    const runner = new FakeImsgRunner({
+      '--version': ok('imsg 0.5.1'),
+      chats: ok(CHATS),
+      history: ok(HISTORY),
+    });
+    // A thread can appear the moment somebody writes, so the miss must expire.
+    const { api } = await start({ missTtlMs: 0 }, { runner });
+
+    await api('/threads?handle=%2B15550000000');
+    await api('/threads?handle=%2B15550000000');
+
+    expect(runner.calls.filter((call) => call[0] === 'chats').length).toBeGreaterThan(1);
   });
 });

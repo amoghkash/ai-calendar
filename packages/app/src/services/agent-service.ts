@@ -30,6 +30,9 @@ import {
 import type { AgentCommand, AgentContext, CommandParser, LLMProvider } from '@calendar-agent/agent';
 import { explainPlan, renderRiskSummary } from '@calendar-agent/agent';
 import type { CalendarService } from './calendar-service.js';
+import type { AgentTool } from '@calendar-agent/agent';
+import { buildToolAgentSystemPrompt, modelUnavailable, runToolLoop } from '@calendar-agent/agent';
+import type { OutreachService } from './outreach-service.js';
 import type { PreferencesService } from './preferences-service.js';
 import type { SchedulingService } from './scheduling-service.js';
 import type { TaskService } from './task-service.js';
@@ -80,6 +83,9 @@ export class AgentService {
     private readonly ids: IdGenerator,
     private readonly logger: Logger,
     private readonly llm?: LLMProvider,
+    private readonly outreach?: OutreachService,
+    /** Tools for the loop. Absent means the typed-command path is used. */
+    private readonly toolsFor?: (userId: UserId) => AgentTool<never>[],
   ) {}
 
   async buildContext(userId: UserId): Promise<AgentContext> {
@@ -125,6 +131,46 @@ export class AgentService {
       content: input.text,
       createdAt: now,
     });
+
+    // A model, if there is one, drives the turn by calling tools. Without one
+    // the typed-command parser still answers - scheduling never needed a model
+    // and neither does the fallback.
+    if (this.toolsFor && this.llm && this.llm.name !== 'none') {
+      let loop;
+      try {
+        loop = await runToolLoop(
+          [
+            ...history.map((turn) => ({ role: turn.role, content: turn.content })),
+            { role: 'user' as const, content: input.text },
+          ],
+          {
+            llm: this.llm,
+            tools: this.toolsFor(input.userId),
+            system: buildToolAgentSystemPrompt(context),
+            logger: this.logger,
+          },
+        );
+      } catch (error) {
+        // A configured model that cannot answer must say so. Falling back to
+        // the rule parser here would hide a broken key behind a worse answer.
+        throw modelUnavailable(this.llm.name, this.llm.model, error);
+      }
+      const reply =
+        loop.text.length > 0 ? loop.text : 'I did that, but had nothing to add about it.';
+      await this.record(conversationId, reply, this.clock.now());
+      this.logger.info('agent.turn', {
+        source: 'tools',
+        iterations: loop.iterations,
+        tools: loop.calls.map((call) => call.name),
+      });
+      return {
+        reply,
+        source: 'llm',
+        commands: [],
+        needsConfirmation: false,
+        conversationId,
+      };
+    }
 
     const parsed = await this.parser.parse({
       text: input.text,
@@ -506,6 +552,77 @@ export class AgentService {
                   .join('; ')}.`,
           );
           scheduleAfterwards = { taskIds: [task.id], range };
+          break;
+        }
+
+        case 'schedule_with_person': {
+          if (!this.outreach) {
+            lines.push(
+              'Arranging something with someone needs the messaging integration. Set CALENDAR_AGENT_MESSAGING_ENABLED=true and start the bridge.',
+            );
+            break;
+          }
+          const outcome = await this.outreach.draft({
+            userId,
+            person: command.person,
+            activity: command.activity,
+            ...(command.durationMinutes === undefined
+              ? {}
+              : { durationMinutes: command.durationMinutes }),
+            ...(command.withinDays === undefined ? {} : { withinDays: command.withinDays }),
+            ...(command.rangeStart === undefined || command.rangeEnd === undefined
+              ? {}
+              : {
+                  range: {
+                    start: instantFromISO(command.rangeStart),
+                    end: instantFromISO(command.rangeEnd),
+                  },
+                }),
+            ...(command.tone === undefined ? {} : { tone: command.tone }),
+          });
+
+          switch (outcome.kind) {
+            case 'drafted':
+              // The draft is the answer. Saying it was "arranged" would imply
+              // something reached another person, and nothing has.
+              lines.push(
+                `Drafted a message to ${outcome.outreach.displayName}:`,
+                `"${outcome.outreach.message}"`,
+                'Nothing has been sent - send it yourself, then mark it sent.',
+              );
+              break;
+            case 'ambiguous':
+              lines.push(
+                `More than one "${command.person}" is in your contacts: ${outcome.candidates
+                  .map((contact) => contact.displayName)
+                  .join(', ')}. Which one?`,
+              );
+              break;
+            case 'unknown':
+              lines.push(`I could not find "${outcome.person}" in your contacts.`);
+              break;
+            case 'no_time': {
+              // A bare "no free time" reads as broken to somebody looking at a
+              // calendar with an obvious gap in it. Say how close it got.
+              const shortfall =
+                outcome.longestFreeMinutes > 0
+                  ? `the longest free stretch is ${formatMinutes(outcome.longestFreeMinutes)}, short of the ${formatMinutes(outcome.neededMinutes)} it looked for`
+                  : 'nothing is free in those hours at all';
+              const buffer =
+                outcome.bufferMinutes > 0 && outcome.longestFreeMinutes > 0
+                  ? ` Your ${outcome.bufferMinutes}-minute buffer around meetings is counted in that.`
+                  : '';
+              lines.push(
+                `No ${command.activity} fits for ${outcome.person}: ${shortfall}.${buffer}`,
+              );
+              if (outcome.nextAvailable) {
+                lines.push(
+                  `The next opening is ${describeInterval(outcome.nextAvailable, ctx.timezone)}. Ask again for that day, or for a shorter ${command.activity}.`,
+                );
+              }
+              break;
+            }
+          }
           break;
         }
 

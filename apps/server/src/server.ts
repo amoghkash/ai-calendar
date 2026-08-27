@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express from 'express';
 import type { Express } from 'express';
-import type { AppContext, BackgroundSync } from '@calendar-agent/app';
+import type { AppContext, BackgroundSync, OutreachPoller } from '@calendar-agent/app';
 import { errorMiddleware } from './http-errors.js';
 import { buildOAuthRoutes } from './oauth-routes.js';
 import { buildRoutes } from './routes.js';
@@ -14,6 +14,8 @@ export interface ServerOptions {
   readonly webRoot?: string;
   /** Periodic sync loop, so its status can be reported. */
   readonly backgroundSync?: BackgroundSync;
+  /** Reply-watching loop, so its status can be reported. */
+  readonly outreachPoller?: OutreachPoller;
 }
 
 export function createServer(app: AppContext, options: ServerOptions = {}): Express {
@@ -23,7 +25,7 @@ export function createServer(app: AppContext, options: ServerOptions = {}): Expr
   server.use(cors({ origin: [...app.config.server.corsOrigins], credentials: true }));
 
   server.use('/api/oauth', buildOAuthRoutes(app));
-  server.use('/api', buildRoutes(app, options.backgroundSync));
+  server.use('/api', buildRoutes(app, options.backgroundSync, options.outreachPoller));
 
   const webRoot = options.webRoot ?? findWebRoot();
   if (webRoot) {

@@ -6,6 +6,7 @@ import type {
   Category,
   EventContactLink,
   EventSyncRecord,
+  Outreach,
   SchedulingPreferences,
   ScheduleBlock,
   StoredChangeSet,
@@ -29,6 +30,7 @@ export interface DatabaseSnapshot {
   tokens: Record<string, StoredTokens>;
   categories: Category[];
   contactLinks: EventContactLink[];
+  outreach: Outreach[];
   preferences: SchedulingPreferences[];
   settings: AppSettings[];
   syncStates: SyncState[];
@@ -49,6 +51,7 @@ export const emptySnapshot = (): DatabaseSnapshot => ({
   tokens: {},
   categories: [],
   contactLinks: [],
+  outreach: [],
   preferences: [],
   settings: [],
   syncStates: [],
