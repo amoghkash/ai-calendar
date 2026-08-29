@@ -124,6 +124,7 @@ export function buildProgram(options: CliOptions = {}): Command {
     .option('--importance <n>', 'long-term importance 0-100')
     .option('--min-block <duration>', 'minimum contiguous block')
     .option('--max-block <duration>', 'maximum contiguous block')
+    .option('--max-daily <duration>', 'most time to spend on this task in one day')
     .option('--no-split', 'require a single contiguous block')
     .option('--focus <level>', 'deep | shallow | any')
     .option('--tags <tags>', 'comma separated tags')
@@ -144,6 +145,7 @@ export function buildProgram(options: CliOptions = {}): Command {
           ...(opts.importance === undefined ? {} : { importance: Number(opts.importance) }),
           ...(opts.minBlock ? { minimumBlockMinutes: requireDuration(String(opts.minBlock)) } : {}),
           ...(opts.maxBlock ? { maximumBlockMinutes: requireDuration(String(opts.maxBlock)) } : {}),
+          ...(opts.maxDaily ? { maxDailyMinutes: requireDuration(String(opts.maxDaily)) } : {}),
           allowSplitting: opts.split !== false,
           ...(opts.focus ? { focus: String(opts.focus) as Task['focus'] } : {}),
           ...(opts.tags

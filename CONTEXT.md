@@ -185,7 +185,7 @@ Component map:
 | ------------------------------ | ------------------------------------------------ |
 | `App.tsx`                      | shell: top nav, rails, footer, dialog hosting    |
 | `components/CalendarView.tsx`  | day/week grid, drag-to-move, click-to-create     |
-| `components/TaskPanel.tsx`     | task list + collapsible create form              |
+| `components/TaskPanel.tsx`     | open/done lists + create-and-edit form           |
 | `components/ProposalPanel.tsx` | change-set diff, quality meters, approve/discard |
 | `components/ChatPanel.tsx`     | assistant bubbles                                |
 
@@ -540,9 +540,41 @@ anchor. `startOfWeek` in `time.ts` steps back from local noon rather than from
 the instant, so a DST change cannot land it on the wrong calendar day. Adding a
 Monday start is a one-line change to the `WeekStart` union plus an option.
 
+### Two daily caps, deliberately separate
+
+`SchedulingPreferences.maxDailyTaskMinutes` caps **all** task work on a day.
+`Task.maxDailyMinutes` caps **one task's** share of it, so eight hours of
+revision can be paced across a fortnight. The placement loop takes whichever
+budget bites first.
+
+Three things make it behave:
+
+- `AvailabilityLedger` tracks per-task day usage alongside the shared total.
+  Retained blocks are seeded into the per-task map through
+  `recordTaskDayUsage`, which does **not** touch `dayUsage` - a replan would
+  otherwise top a capped task back up on a day it had already filled. The
+  global cap's existing blind spot to retained blocks is left as it was;
+  folding them in would quietly tighten a separate, long-standing budget.
+- `capacityForTask` clamps each day's contribution to the cap, so risk sees the
+  real ceiling. Without it a task capped at 2h/day against eight free hours
+  would be reported on track when it cannot possibly land.
+- `TaskService` rejects a cap below the task's minimum block, which would
+  otherwise be an unschedulable task whose only explanation is "nothing fitted".
+
+### Clearing an optional task field
+
+`TaskService.update` merges through `stripUndefined`, so an absent key means
+"unchanged". That left no way to *remove* a deadline: `PATCH {deadline: null}`
+was flattened to `undefined` and silently dropped, and the field survived. An
+explicit `null` now clears any field in `CLEARABLE_TASK_FIELDS`; the route
+passes the null through rather than converting it.
+
 ## 10. Open threads
 
 - No web UI tests exist. Any UI regression is caught by eye, not by CI.
+- The grid drops already-happened events after any task mutation: `refresh()`
+  overwrites `state.events` with `/state`'s forward-only horizon, and the wider
+  `api.agenda` fetch in `App.tsx` only re-runs when the visible window changes.
 - `weights`, `risk`, `stability` and `blocked_periods` are configurable in YAML
   but absent from the settings panel — a deliberate scope call, not an oversight.
 - Adding an API key still requires editing `.env` and restarting the server.

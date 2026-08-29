@@ -42,6 +42,15 @@ export interface Task {
 
   readonly minimumBlockMinutes: number;
   readonly maximumBlockMinutes?: number;
+  /**
+   * Most of *this* task the scheduler may place on any one local day.
+   *
+   * Distinct from the global `maxDailyTaskMinutes` preference, which caps all
+   * task work on a day taken together: this one paces a single task, so eight
+   * hours of revision can be spread over a fortnight rather than sat in one
+   * sitting. Undefined means no per-task cap.
+   */
+  readonly maxDailyMinutes?: number;
   readonly allowSplitting: boolean;
 
   /** Preferred times of day; empty means "any time inside working hours". */
@@ -117,6 +126,17 @@ export function effectiveMaximumBlockMinutes(task: Task, globalMaximum: number):
     (value): value is number => typeof value === 'number' && value > 0,
   );
   return candidates.length > 0 ? Math.min(...candidates) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Minutes of `task` still placeable on a day that already holds `usedToday`.
+ *
+ * Infinite when the task sets no daily cap, which keeps callers free of a
+ * special case: the value is only ever used inside a `Math.min`.
+ */
+export function dailyRemainingMinutes(task: Task, usedToday: number): number {
+  if (task.maxDailyMinutes === undefined) return Number.POSITIVE_INFINITY;
+  return Math.max(0, task.maxDailyMinutes - usedToday);
 }
 
 /** Tasks whose dependencies are not yet completed cannot be scheduled. */

@@ -43,6 +43,13 @@ const taskFields = {
   importance: z.number().int().min(0).max(100).optional(),
   minimumBlockMinutes: z.number().int().positive().optional(),
   maximumBlockMinutes: z.number().int().positive().optional(),
+  /** Cap on this task's time in any one day, e.g. "no more than 2h a day". */
+  maxDailyMinutes: z
+    .number()
+    .int()
+    .positive()
+    .max(60 * 24)
+    .optional(),
   allowSplitting: z.boolean().optional(),
   focus: focusLevel.optional(),
   tags: z.array(z.string()).optional(),

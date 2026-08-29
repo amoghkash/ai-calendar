@@ -167,6 +167,9 @@ export function buildRoutes(
         ...(body.minimumBlockMinutes === undefined
           ? {}
           : { minimumBlockMinutes: Number(body.minimumBlockMinutes) }),
+        ...(body.maxDailyMinutes === undefined || body.maxDailyMinutes === null
+          ? {}
+          : { maxDailyMinutes: Number(body.maxDailyMinutes) }),
         ...(body.allowSplitting === undefined
           ? {}
           : { allowSplitting: Boolean(body.allowSplitting) }),
@@ -188,10 +191,14 @@ export function buildRoutes(
     asyncRoute(async (req, res) => {
       const body = req.body as Record<string, unknown>;
       const changes: Record<string, unknown> = { ...body };
+      // A null reaches the service as "clear this field"; it must survive the
+      // hop rather than being flattened to undefined, which reads as "unsaid".
       if (typeof body.deadline === 'string') changes.deadline = instantFromISO(body.deadline);
-      if (body.deadline === null) changes.deadline = undefined;
       if (typeof body.earliestStart === 'string') {
         changes.earliestStart = instantFromISO(body.earliestStart);
+      }
+      if (body.maxDailyMinutes !== undefined && body.maxDailyMinutes !== null) {
+        changes.maxDailyMinutes = Number(body.maxDailyMinutes);
       }
       // These two reach the scheduler's placement filter directly, so they are
       // parsed rather than merged raw like the rest of the body.

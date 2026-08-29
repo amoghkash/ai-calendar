@@ -213,6 +213,50 @@ describe('application services', () => {
     });
     expect(applied.blocks).toHaveLength(1);
   });
+
+  it('rejects a daily limit that could never hold a block', async () => {
+    await expect(
+      harness.app.tasks.create({
+        userId: harness.userId,
+        title: 'Impossible cap',
+        estimatedMinutes: 120,
+        minimumBlockMinutes: 60,
+        maxDailyMinutes: 30,
+      }),
+    ).rejects.toThrow(/below this task's minimum block/);
+
+    await expect(
+      harness.app.tasks.create({
+        userId: harness.userId,
+        title: 'Negative cap',
+        estimatedMinutes: 120,
+        maxDailyMinutes: 0,
+      }),
+    ).rejects.toThrow(/positive number of minutes/);
+  });
+
+  it('clears an optional field when the update says null, and only then', async () => {
+    const task = await harness.app.tasks.create({
+      userId: harness.userId,
+      title: 'Clearable',
+      estimatedMinutes: 120,
+      deadline: at('2026-03-11T17:00:00Z'),
+      maxDailyMinutes: 60,
+    });
+
+    // An absent key leaves the field alone...
+    const renamed = await harness.app.tasks.update(task.id, { title: 'Renamed' });
+    expect(renamed.deadline).toBe(at('2026-03-11T17:00:00Z'));
+    expect(renamed.maxDailyMinutes).toBe(60);
+
+    // ...an explicit null removes it.
+    const cleared = await harness.app.tasks.update(task.id, {
+      deadline: null,
+      maxDailyMinutes: null,
+    });
+    expect(cleared.deadline).toBeUndefined();
+    expect(cleared.maxDailyMinutes).toBeUndefined();
+  });
 });
 
 describe('agent service', () => {

@@ -96,6 +96,18 @@ const PATHS: Record<string, ReactElement> = {
     </>
   ),
   text: <path d="M4 5.5h12M4 10h12M4 14.5h7" />,
+  pencil: (
+    <>
+      <path d="M13.2 3.6a1.9 1.9 0 0 1 2.7 2.7L7.4 14.8 4 16l1.2-3.4z" />
+      <path d="M12.2 4.6l2.7 2.7" />
+    </>
+  ),
+  undo: (
+    <>
+      <path d="M4 10a6 6 0 1 0 1.8-4.3" />
+      <path d="M4 3v3.5h3.5" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 16 }: { name: string; size?: number }) {

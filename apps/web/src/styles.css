@@ -657,6 +657,11 @@ main {
 .task-form .row.actions {
   justify-content: flex-end;
 }
+/* Save and Cancel are peers: equal width as well as equal height, so the pair
+   reads as one control rather than a button with an afterthought beside it. */
+.task-form .row.actions button {
+  flex: 1;
+}
 
 /* Weekday toggles. Buttons rather than checkboxes: seven of them need to read
    as one control, and the label is the whole target. */
@@ -752,6 +757,65 @@ main {
   display: flex;
   gap: 2px;
   flex: none;
+}
+
+/* Open vs. done. A quiet segmented strip: switching lists is navigation, not
+   an action, so it does not compete with "New task" above it. */
+.task-views {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: var(--s-xs);
+  border-radius: var(--r-md);
+  background: var(--surface-card);
+}
+.task-views button {
+  flex: 1;
+  padding: var(--s-xxs) var(--s-xs);
+  border: none;
+  border-radius: calc(var(--r-md) - 3px);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.task-views button:hover {
+  color: var(--ink);
+}
+.task-views button.on {
+  background: var(--canvas);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+/* The row whose contents are loaded into the form above. */
+.task.editing {
+  background: var(--surface-strong);
+}
+.task.editing .accent {
+  background: var(--primary);
+}
+
+.task-archive-note {
+  margin: 0 0 var(--s-xs);
+  padding: 0 var(--s-xxs);
+  color: var(--muted);
+  font-size: 13px;
+}
+.task.done .accent {
+  background: var(--success);
+}
+.task.done.cancelled .accent {
+  background: var(--surface-strong);
+}
+/* Finished work is a record, not a to-do list: it recedes until hovered. */
+.task.done .task-title {
+  font-weight: 500;
+  color: var(--muted);
+}
+.task.done:hover .task-title {
+  color: var(--ink);
 }
 
 /* ---------------------------------------------------------------- risks    */

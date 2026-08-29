@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   importance            INTEGER NOT NULL,
   minimum_block_minutes INTEGER NOT NULL,
   maximum_block_minutes INTEGER,
+  max_daily_minutes     INTEGER,
   allow_splitting       BOOLEAN NOT NULL DEFAULT TRUE,
   preferred_windows     JSONB NOT NULL DEFAULT '[]'::jsonb,
   preferred_days        JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -310,6 +311,12 @@ ALTER TABLE outreach ADD COLUMN IF NOT EXISTS clarifications INTEGER;
     id: '0009_outreach_kind',
     sql: `
 ALTER TABLE outreach ADD COLUMN IF NOT EXISTS kind TEXT;
+`,
+  },
+  {
+    id: '0010_task_max_daily_minutes',
+    sql: `
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS max_daily_minutes INTEGER;
 `,
   },
 ];

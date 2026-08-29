@@ -23,6 +23,8 @@ export interface Task {
   tags: string[];
   focus: string;
   pinned: boolean;
+  /** Most of this task the scheduler may place on any one day. */
+  maxDailyMinutes?: number;
   /**
    * Times of day the scheduler should place this task in. A hard filter that
    * is relaxed automatically when nothing fits, so it floats rather than fails.
@@ -30,7 +32,15 @@ export interface Task {
   preferredWindows: DailyWindow[];
   /** Days the task may be placed on. Empty means any day. */
   preferredDays: Weekday[];
+  createdAt: number;
+  updatedAt: number;
+  /** Set when the task was marked complete; the anchor for the done list. */
+  completedAt?: number;
 }
+
+/** A task no longer in play: finished, or abandoned. */
+export const isArchived = (task: Task): boolean =>
+  task.status === 'completed' || task.status === 'cancelled';
 
 /**
  * Whether the local messaging bridge is reachable and what it may do.
@@ -510,10 +520,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   state: () => request<AppState>('/state'),
+  /** `all` includes completed and cancelled tasks; without it, only open ones. */
+  listTasks: (options: { all?: boolean } = {}) =>
+    request<Task[]>(`/tasks${options.all === true ? '?all=true' : ''}`),
   createTask: (task: Partial<Task> & { title: string; estimatedMinutes: number }) =>
     request<Task>('/tasks', { method: 'POST', body: JSON.stringify(task) }),
-  updateTask: (id: string, changes: Partial<Task>) =>
-    request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
+  // `deadline` is the one field that can be *removed* rather than changed, and
+  // JSON has no "absent" to send: an explicit null is what clears it.
+  updateTask: (
+    id: string,
+    changes: Partial<Omit<Task, 'deadline' | 'maxDailyMinutes'>> & {
+      deadline?: string | number | null;
+      maxDailyMinutes?: number | null;
+    },
+  ) => request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
   completeTask: (id: string) => request<Task>(`/tasks/${id}/complete`, { method: 'POST' }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
   plan: (body: { taskIds?: string[]; days?: number; rebuild?: boolean } = {}) =>

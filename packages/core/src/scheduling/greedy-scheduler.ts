@@ -5,6 +5,7 @@ import type { ScheduleBlock } from '../domain/schedule.js';
 import { blockMinutes, isLiveBlock } from '../domain/schedule.js';
 import type { Task } from '../domain/task.js';
 import {
+  dailyRemainingMinutes,
   effectiveMaximumBlockMinutes,
   effectiveMinimumBlockMinutes,
   isSchedulable,
@@ -23,7 +24,14 @@ import {
   mergeIntervals,
   overlaps,
 } from '../time/interval.js';
-import { describeInterval, expandWindowOnDay, localDayKey, weekdayOf } from '../time/wall-clock.js';
+import {
+  describeInterval,
+  eachLocalDay,
+  expandWindowOnDay,
+  localDayInterval,
+  localDayKey,
+  weekdayOf,
+} from '../time/wall-clock.js';
 import type { AvailabilityResult, FreeWindow } from './availability.js';
 import { AvailabilityLedger, capacityWithin, computeAvailability } from './availability.js';
 import { buildScheduleDiff } from './diff.js';
@@ -193,6 +201,18 @@ export class GreedyScheduler implements Scheduler {
         retained.map((r) => r.interval),
       ),
     );
+    // Retained blocks already spend a task's daily allowance. Without this a
+    // replan would top a capped task back up to its cap on a day it has
+    // already filled, which is how you get four hours on a two-hour cap.
+    for (const item of retained) {
+      const usable = clamp(item.interval, { start: now, end: horizon.end });
+      if (!usable) continue;
+      for (const dayKey of eachLocalDay(usable, timezone)) {
+        const piece = clamp(usable, localDayInterval(dayKey, timezone));
+        if (!piece || isEmpty(piece)) continue;
+        ledger.recordTaskDayUsage(item.block.taskId, dayKey, durationMinutes(piece));
+      }
+    }
     const releasedByTask = new Map<TaskId, ScheduleBlock[]>();
     for (const block of released) {
       const list = releasedByTask.get(block.taskId);
@@ -450,7 +470,22 @@ export class GreedyScheduler implements Scheduler {
       prefs.timezone,
       false,
     );
-    return capacityWithin(windows, bounds, minChunk);
+    if (task.maxDailyMinutes === undefined) return capacityWithin(windows, bounds, minChunk);
+    // A daily cap is a real ceiling on what the deadline can absorb, so risk
+    // has to see it: eight free hours a day are worth two to a task capped at
+    // two, and calling that "on track" would be a lie.
+    const perDay = new Map<string, number>();
+    for (const window of windows) {
+      for (const dayKey of eachLocalDay(window, prefs.timezone)) {
+        const piece = clamp(window, localDayInterval(dayKey, prefs.timezone));
+        if (!piece || isEmpty(piece)) continue;
+        const usable = capacityWithin([piece], bounds, minChunk);
+        perDay.set(dayKey, (perDay.get(dayKey) ?? 0) + usable);
+      }
+    }
+    let total = 0;
+    for (const minutes of perDay.values()) total += Math.min(minutes, task.maxDailyMinutes);
+    return total;
   }
 
   /** Apply per-task constraints to the candidate windows. */
@@ -620,10 +655,14 @@ export class GreedyScheduler implements Scheduler {
         // A task with a latest-start must actually begin by then.
         if (isFirstBlock && task.latestStart !== undefined && start > task.latestStart) continue;
 
-        const dayRemaining =
+        // Two independent budgets: all task work on the day, and this task's
+        // own share of it. Whichever bites first wins.
+        const dayRemaining = Math.min(
           prefs.maxDailyTaskMinutes === undefined
             ? Number.POSITIVE_INFINITY
-            : Math.max(0, prefs.maxDailyTaskMinutes - ledger.minutesUsedOnDay(window.dayKey));
+            : Math.max(0, prefs.maxDailyTaskMinutes - ledger.minutesUsedOnDay(window.dayKey)),
+          dailyRemainingMinutes(task, ledger.minutesUsedOnDayByTask(task.id, window.dayKey)),
+        );
         if (dayRemaining < minBlock) continue;
 
         if (!splittable && capacity < remaining) continue;
@@ -668,7 +707,7 @@ export class GreedyScheduler implements Scheduler {
           ),
         });
 
-        ledger.reserve(interval, prefs.bufferBetweenBlocksMinutes, window.dayKey);
+        ledger.reserve(interval, prefs.bufferBetweenBlocksMinutes, window.dayKey, task.id);
         remaining = round(remaining - chunk, 4);
         sequence += 1;
         lastDay = window.dayKey;

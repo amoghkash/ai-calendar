@@ -323,6 +323,83 @@ describe('GreedyScheduler: constraints', () => {
     expect(new Set(plan.blocks.map((b) => instantToISO(b.start).slice(0, 10))).size).toBe(4);
   });
 
+  it('caps the amount of one task per day, spreading it across days', () => {
+    const task = taskFixture({
+      estimatedMinutes: 480,
+      minimumBlockMinutes: 60,
+      maxDailyMinutes: 120,
+    });
+    const plan = scheduler.plan(
+      input({ tasks: [task], preferences: prefs({ maximumBlockMinutes: 480 }) }),
+    );
+    expect(plan.blocks.map((b) => b.minutes)).toEqual([120, 120, 120, 120]);
+    expect(new Set(plan.blocks.map((b) => instantToISO(b.start).slice(0, 10))).size).toBe(4);
+  });
+
+  it('applies a per-task daily cap only to the task that carries it', () => {
+    const capped = taskFixture({
+      id: 'capped',
+      estimatedMinutes: 240,
+      minimumBlockMinutes: 60,
+      maxDailyMinutes: 60,
+    });
+    const free = taskFixture({ id: 'free', estimatedMinutes: 240, minimumBlockMinutes: 60 });
+    const plan = scheduler.plan(
+      input({ tasks: [capped, free], preferences: prefs({ maximumBlockMinutes: 480 }) }),
+    );
+    const byDay = new Map<string, number>();
+    for (const block of plan.blocks.filter((b) => b.taskId === 'capped')) {
+      const day = instantToISO(block.start).slice(0, 10);
+      byDay.set(day, (byDay.get(day) ?? 0) + block.minutes);
+    }
+    expect([...byDay.values()].every((minutes) => minutes <= 60)).toBe(true);
+    // The uncapped task is free to take a whole day in one go.
+    const freeBlocks = plan.blocks.filter((b) => b.taskId === 'free');
+    expect(Math.max(...freeBlocks.map((b) => b.minutes))).toBeGreaterThan(60);
+  });
+
+  it('counts retained blocks against the daily cap instead of topping them up', () => {
+    const task = taskFixture({
+      id: 'algorithms',
+      estimatedMinutes: 240,
+      minimumBlockMinutes: 60,
+      maxDailyMinutes: 120,
+    });
+    // Monday already holds the task's full daily allowance.
+    const existing = blockFixture({
+      id: 'b1',
+      taskId: 'algorithms',
+      start: at('2026-03-09T09:00:00Z'),
+      end: at('2026-03-09T11:00:00Z'),
+    });
+    const plan = scheduler.plan(
+      input({
+        tasks: [task],
+        existingBlocks: [existing],
+        preferences: prefs({ maximumBlockMinutes: 480 }),
+      }),
+    );
+    const monday = plan.blocks
+      .filter((b) => instantToISO(b.start).slice(0, 10) === '2026-03-09')
+      .reduce((sum, b) => sum + b.minutes, 0);
+    expect(monday).toBe(120);
+  });
+
+  it('reports a capped task as short of capacity when the deadline cannot absorb it', () => {
+    const task = taskFixture({
+      id: 'crammed',
+      estimatedMinutes: 480,
+      minimumBlockMinutes: 60,
+      maxDailyMinutes: 60,
+      // Two working days available, so a 1h/day cap can only ever yield 2h.
+      deadline: at('2026-03-11T00:00:00Z'),
+    });
+    const plan = scheduler.plan(input({ tasks: [task] }));
+    const risk = plan.risks.find((r) => r.taskId === 'crammed')!;
+    expect(risk.availableMinutesBeforeDeadline).toBeLessThanOrEqual(120);
+    expect(risk.level).not.toBe('SAFE');
+  });
+
   it('does not schedule a task whose dependency is unfinished', () => {
     const first = taskFixture({ id: 'first', estimatedMinutes: 60 });
     const second = taskFixture({ id: 'second', estimatedMinutes: 60, dependsOn: ['first'] });

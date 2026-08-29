@@ -92,7 +92,10 @@ export function CalendarView({
   const dayStarts = Array.from({ length: daysToShow }, (_, index) =>
     dayStartFor(startInstant + index * DAY_MS, timezone),
   );
-  const [firstHour, lastHour] = visibleHourRange(state);
+  // The grid always shows the full day; entries that cross midnight are
+  // clipped and continue into the next day's column (see `place` below).
+  const firstHour = 0;
+  const lastHour = 24;
   const calendarById = new Map(calendars.map((calendar) => [calendar.id, calendar]));
   const colorById = new Map(state.categories.map((category) => [category.id, category.color]));
 
@@ -403,7 +406,7 @@ export function CalendarView({
         <div className="gutter">
           {Array.from({ length: lastHour - firstHour }, (_, index) => (
             <div key={index} className="hour-label" style={{ height: HOUR_HEIGHT }}>
-              {String(firstHour + index).padStart(2, '0')}:00
+              {hourLabel(firstHour + index)}
             </div>
           ))}
         </div>
@@ -420,10 +423,18 @@ export function CalendarView({
           const blocks = state.blocks.filter((block) => inDay(block.start, block.end));
           const proposals = (proposedBlocks ?? []).filter((block) => inDay(block.start, block.end));
 
-          const place = (start: number, end: number) => ({
-            top: (minutesFromMidnight(start, timezone) / 60 - firstHour) * HOUR_HEIGHT,
-            height: Math.max(16, ((end - start) / 3_600_000) * HOUR_HEIGHT),
-          });
+          // Clipped to this column's own midnight-to-midnight span, so an
+          // entry that crosses midnight is cut off here and picked up again
+          // at the top of the next day's column (it is a member of both,
+          // per `inDay` above).
+          const place = (start: number, end: number) => {
+            const from = Math.max(start, dayStart);
+            const to = Math.min(end, dayStart + DAY_MS);
+            return {
+              top: ((from - dayStart) / 3_600_000 - firstHour) * HOUR_HEIGHT,
+              height: Math.max(16, ((to - from) / 3_600_000) * HOUR_HEIGHT),
+            };
+          };
 
           return (
             <div
@@ -624,8 +635,17 @@ function eventTooltip(event: CalendarEvent, timezone: string, draggable: boolean
 
 const clockLabel = (minutes: number): string => {
   const total = ((minutes % 1440) + 1440) % 1440;
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  return hourLabel(total / 60, total % 60);
 };
+
+/** Gutter/draft hour label, e.g. `8 AM`, `12 PM`, or `1:30 PM` when minutes are given. */
+function hourLabel(hour: number, minute = 0): string {
+  const period = hour < 12 ? 'AM' : 'PM';
+  const twelveHour = Math.floor(hour) % 12 === 0 ? 12 : Math.floor(hour) % 12;
+  return minute === 0
+    ? `${twelveHour} ${period}`
+    : `${twelveHour}:${String(minute).padStart(2, '0')} ${period}`;
+}
 
 /** The range being drawn, shown as it will be created. */
 function Draft({
@@ -717,22 +737,3 @@ function workdayStartHour(state: AppState): number {
   return earliest === 24 ? 8 : earliest;
 }
 
-/** Show the working day plus an hour of padding, never the whole 24 hours. */
-function visibleHourRange(state: AppState): [number, number] {
-  let min = 23;
-  let max = 1;
-  for (const windows of Object.values(state.preferences.workingHours)) {
-    for (const window of windows ?? []) {
-      min = Math.min(min, window.start.hour);
-      max = Math.max(max, window.end.hour === 0 ? 24 : window.end.hour);
-    }
-  }
-  for (const entry of [...state.events, ...state.blocks]) {
-    const start = Math.floor(minutesFromMidnight(entry.start, state.timezone) / 60);
-    const end = Math.ceil(minutesFromMidnight(entry.end, state.timezone) / 60);
-    min = Math.min(min, start);
-    max = Math.max(max, end === 0 ? 24 : end);
-  }
-  if (min >= max) return [8, 20];
-  return [Math.max(0, min - 1), Math.min(24, max + 1)];
-}

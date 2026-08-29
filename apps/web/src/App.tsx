@@ -7,7 +7,7 @@ import type {
   Task,
   TaskRisk,
 } from './api';
-import { ApiError, api } from './api';
+import { ApiError, api, isArchived } from './api';
 import { AgendaPanel } from './components/AgendaPanel';
 import { DeletionToast } from './components/DeletionToast';
 import { CalendarSettings } from './components/CalendarSettings';
@@ -63,11 +63,33 @@ export default function App() {
   // an hour" is resolved against what was already said.
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
 
+  // Finished work is kept out of `/state`, which carries only what the
+  // scheduler still has to reason about. It is fetched on demand instead, the
+  // first time the done view is opened.
+  const [archive, setArchive] = useState<Task[] | null>(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+
   const refresh = useCallback(async () => {
     const next = await api.state();
     setState(next);
     return next;
   }, []);
+
+  const loadArchive = useCallback(async () => {
+    setArchiveLoading(true);
+    try {
+      const all = await api.listTasks({ all: true });
+      setArchive(all.filter(isArchived));
+    } finally {
+      setArchiveLoading(false);
+    }
+  }, []);
+
+  /** Keep an already-open done list honest after a task changes. */
+  const syncArchive = useCallback(async () => {
+    if (archive === null) return;
+    await loadArchive();
+  }, [archive, loadArchive]);
 
   useEffect(() => {
     refresh().catch((cause: unknown) => setError(describe(cause)));
@@ -383,6 +405,8 @@ export default function App() {
             <>
               <TaskPanel
                 tasks={state.tasks}
+                archive={archive}
+                archiveLoading={archiveLoading}
                 risks={riskByTask}
                 timezone={state.timezone}
                 now={state.now}
@@ -393,19 +417,40 @@ export default function App() {
                     await refresh();
                   })
                 }
+                onUpdate={(id, input) =>
+                  guard(async () => {
+                    // An empty deadline field means "no deadline"; null is how
+                    // the API hears that, since an absent key changes nothing.
+                    await api.updateTask(id, { ...input, deadline: input.deadline ?? null });
+                    await refresh();
+                    await syncArchive();
+                  })
+                }
                 onComplete={(id) =>
                   guard(async () => {
                     await api.completeTask(id);
                     await refresh();
+                    await syncArchive();
+                  })
+                }
+                onReopen={(id) =>
+                  guard(async () => {
+                    await api.updateTask(id, { status: 'todo' });
+                    await refresh();
+                    await syncArchive();
                   })
                 }
                 onDelete={(id) =>
                   guard(async () => {
                     await api.deleteTask(id);
                     await refresh();
+                    await syncArchive();
                   })
                 }
                 onSchedule={(id) => plan([id])}
+                onLoadArchive={() => {
+                  void loadArchive().catch((cause: unknown) => setError(describe(cause)));
+                }}
               />
               <RiskPanel risks={notableRisks} />
             </>

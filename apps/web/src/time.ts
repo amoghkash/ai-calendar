@@ -57,8 +57,15 @@ export const dayKey = (instant: number, timezone: string): string => {
 
 export const timeLabel = (instant: number, timezone: string): string => {
   const parts = dayParts(instant, timezone);
-  return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+  return clockLabel(parts.hour, parts.minute);
 };
+
+/** 12-hour wall clock, e.g. `8:00 AM`, `12:30 PM`. */
+export function clockLabel(hour: number, minute: number): string {
+  const period = hour < 12 ? 'AM' : 'PM';
+  const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${twelveHour}:${String(minute).padStart(2, '0')} ${period}`;
+}
 
 export const dateLabel = (instant: number, timezone: string): string => {
   const parts = dayParts(instant, timezone);

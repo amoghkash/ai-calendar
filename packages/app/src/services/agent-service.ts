@@ -251,6 +251,9 @@ export class AgentService {
             ...(command.maximumBlockMinutes === undefined
               ? {}
               : { maximumBlockMinutes: command.maximumBlockMinutes }),
+            ...(command.maxDailyMinutes === undefined
+              ? {}
+              : { maxDailyMinutes: command.maxDailyMinutes }),
             ...(command.allowSplitting === undefined
               ? {}
               : { allowSplitting: command.allowSplitting }),
@@ -401,6 +404,9 @@ export class AgentService {
             ...(changes.maximumBlockMinutes === undefined
               ? {}
               : { maximumBlockMinutes: changes.maximumBlockMinutes }),
+            ...(changes.maxDailyMinutes === undefined
+              ? {}
+              : { maxDailyMinutes: changes.maxDailyMinutes }),
             ...(changes.allowSplitting === undefined
               ? {}
               : { allowSplitting: changes.allowSplitting }),

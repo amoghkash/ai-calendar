@@ -20,6 +20,7 @@ const taskProperties = {
   importance: { type: 'integer', minimum: 0, maximum: 100 },
   minimumBlockMinutes: { type: 'integer', minimum: 1 },
   maximumBlockMinutes: { type: 'integer', minimum: 1 },
+  maxDailyMinutes: { type: 'integer', minimum: 1, maximum: 1440 },
   allowSplitting: { type: 'boolean' },
   focus: { type: 'string', enum: ['deep', 'shallow', 'any'] },
   tags: { type: 'array', items: { type: 'string' } },

@@ -7,7 +7,13 @@ import type {
   TaskId,
   UserId,
 } from '@calendar-agent/core';
-import { NotFoundError, ValidationError, makeTask, remainingMinutes } from '@calendar-agent/core';
+import {
+  DEFAULT_MINIMUM_BLOCK_MINUTES,
+  NotFoundError,
+  ValidationError,
+  makeTask,
+  remainingMinutes,
+} from '@calendar-agent/core';
 
 export interface CreateTaskInput {
   readonly userId: UserId;
@@ -21,6 +27,7 @@ export interface CreateTaskInput {
   readonly importance?: number;
   readonly minimumBlockMinutes?: number;
   readonly maximumBlockMinutes?: number;
+  readonly maxDailyMinutes?: number;
   readonly allowSplitting?: boolean;
   readonly focus?: Task['focus'];
   readonly tags?: readonly string[];
@@ -32,10 +39,24 @@ export interface CreateTaskInput {
   readonly pinned?: boolean;
 }
 
+/**
+ * Optional task fields that an update may *remove* rather than change. An
+ * explicit `null` clears one; leaving the key out still means "unchanged".
+ */
+export const CLEARABLE_TASK_FIELDS = [
+  'deadline',
+  'earliestStart',
+  'latestStart',
+  'maximumBlockMinutes',
+  'maxDailyMinutes',
+] as const;
+
+export type ClearableTaskField = (typeof CLEARABLE_TASK_FIELDS)[number];
+
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, 'userId'>> & {
   readonly status?: Task['status'];
   readonly completedMinutes?: number;
-};
+} & { readonly [K in ClearableTaskField]?: CreateTaskInput[K] | null };
 
 /** Task CRUD plus the reference resolution the agent and CLI rely on. */
 export class TaskService {
@@ -49,6 +70,7 @@ export class TaskService {
     if (input.estimatedMinutes <= 0) {
       throw new ValidationError('A task needs a positive estimated duration.');
     }
+    assertDailyCap(input.maxDailyMinutes, input.minimumBlockMinutes);
     if (input.deadline !== undefined && input.earliestStart !== undefined) {
       if (input.deadline <= input.earliestStart) {
         throw new ValidationError('The deadline must be after the earliest start time.');
@@ -86,9 +108,17 @@ export class TaskService {
       ...stripUndefined(changes),
       updatedAt: this.clock.now(),
     };
+    // `stripUndefined` cannot express "remove this": it drops undefined so that
+    // an absent key leaves the task alone. An explicit null is the difference
+    // between "I did not say" and "I said none".
+    const mutable = next as unknown as Record<string, unknown>;
+    for (const field of CLEARABLE_TASK_FIELDS) {
+      if (changes[field] === null) delete mutable[field];
+    }
     if (next.estimatedMinutes <= 0) {
       throw new ValidationError('A task needs a positive estimated duration.');
     }
+    assertDailyCap(next.maxDailyMinutes, next.minimumBlockMinutes);
     return this.db.tasks.save(next);
   }
 
@@ -160,6 +190,24 @@ export class TaskService {
 
   remaining(task: Task): number {
     return remainingMinutes(task);
+  }
+}
+
+/**
+ * A daily cap has to be able to hold at least one block, or the scheduler can
+ * never place the task and says only that nothing fitted. Rejecting it here
+ * turns a silent stall into an answerable message.
+ */
+function assertDailyCap(maxDailyMinutes?: number, minimumBlockMinutes?: number): void {
+  if (maxDailyMinutes === undefined) return;
+  if (!Number.isFinite(maxDailyMinutes) || maxDailyMinutes <= 0) {
+    throw new ValidationError('A daily limit must be a positive number of minutes.');
+  }
+  const minimum = minimumBlockMinutes ?? DEFAULT_MINIMUM_BLOCK_MINUTES;
+  if (maxDailyMinutes < minimum) {
+    throw new ValidationError(
+      `A daily limit of ${maxDailyMinutes} minutes is below this task's minimum block of ${minimum} minutes, so nothing could ever be scheduled.`,
+    );
   }
 }
 

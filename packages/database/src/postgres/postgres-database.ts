@@ -101,9 +101,9 @@ export class PostgresDatabase implements Database {
            earliest_start, latest_start, priority, importance, minimum_block_minutes,
            maximum_block_minutes, allow_splitting, preferred_windows, preferred_days, focus,
            tags, project_id, calendar_id, depends_on, status, pinned, created_at, updated_at,
-           completed_at, category_id)
+           completed_at, category_id, max_daily_minutes)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
-                 $23,$24,$25,$26,$27)
+                 $23,$24,$25,$26,$27,$28)
          ON CONFLICT (id) DO UPDATE SET
            title = EXCLUDED.title, description = EXCLUDED.description,
            estimated_minutes = EXCLUDED.estimated_minutes,
@@ -118,7 +118,8 @@ export class PostgresDatabase implements Database {
            project_id = EXCLUDED.project_id, calendar_id = EXCLUDED.calendar_id,
            depends_on = EXCLUDED.depends_on, status = EXCLUDED.status, pinned = EXCLUDED.pinned,
            updated_at = EXCLUDED.updated_at, completed_at = EXCLUDED.completed_at,
-           category_id = EXCLUDED.category_id`,
+           category_id = EXCLUDED.category_id,
+           max_daily_minutes = EXCLUDED.max_daily_minutes`,
         [
           task.id,
           task.userId,
@@ -147,6 +148,7 @@ export class PostgresDatabase implements Database {
           task.updatedAt,
           task.completedAt ?? null,
           task.categoryId ?? null,
+          task.maxDailyMinutes ?? null,
         ],
       );
     };
@@ -933,6 +935,7 @@ function toTask(row: QueryResultRow): Task {
     importance: num(row.importance),
     minimumBlockMinutes: num(row.minimum_block_minutes),
     maximumBlockMinutes: optNum(row.maximum_block_minutes),
+    maxDailyMinutes: optNum(row.max_daily_minutes),
     allowSplitting: Boolean(row.allow_splitting),
     preferredWindows: (row.preferred_windows ?? []) as Task['preferredWindows'],
     preferredDays: (row.preferred_days ?? []) as Task['preferredDays'],

@@ -185,6 +185,8 @@ export function splitByLocalDay(intervals: readonly Interval[], timezone: string
 export class AvailabilityLedger {
   private windows: FreeWindow[];
   private readonly dayUsage = new Map<string, number>();
+  /** Per-task day usage, keyed by `taskDayKey`. Backs the per-task daily cap. */
+  private readonly taskDayUsage = new Map<string, number>();
 
   constructor(windows: readonly FreeWindow[]) {
     this.windows = [...windows].sort((a, b) => a.start - b.start);
@@ -202,8 +204,13 @@ export class AvailabilityLedger {
     return this.dayUsage.get(dayKey) ?? 0;
   }
 
+  /** Minutes of one task already committed to one local day. */
+  minutesUsedOnDayByTask(taskId: string, dayKey: string): number {
+    return this.taskDayUsage.get(taskDayKey(taskId, dayKey)) ?? 0;
+  }
+
   /** Remove `used`, padded by `bufferMinutes` on **both** sides, from availability. */
-  reserve(used: Interval, bufferMinutes = 0, dayKey?: string): void {
+  reserve(used: Interval, bufferMinutes = 0, dayKey?: string, taskId?: string): void {
     const day = dayKey ?? localDayKeyOf(used.start, this.windows);
     // Both sides, not just the end: a later block can be placed before an
     // earlier one under `best_fit`, and would otherwise butt straight up to it.
@@ -224,21 +231,40 @@ export class AvailabilityLedger {
     }
     this.windows = next.filter((w) => !isEmpty(w));
     if (day !== undefined) {
-      this.dayUsage.set(day, (this.dayUsage.get(day) ?? 0) + durationMinutes(used));
+      this.recordDayUsage(day, durationMinutes(used), taskId);
     }
   }
 
-  /** Record usage against a specific local day (used with the daily cap). */
-  recordDayUsage(dayKey: string, minutesUsed: number): void {
+  /** Record usage against a specific local day (used with the daily caps). */
+  recordDayUsage(dayKey: string, minutesUsed: number, taskId?: string): void {
     this.dayUsage.set(dayKey, (this.dayUsage.get(dayKey) ?? 0) + minutesUsed);
+    if (taskId !== undefined) this.recordTaskDayUsage(taskId, dayKey, minutesUsed);
+  }
+
+  /**
+   * Charge one task's daily allowance without touching the shared day total.
+   *
+   * Used to seed retained blocks, which have already consumed a task's cap but
+   * were never counted against the global one; folding them into `dayUsage`
+   * here would quietly tighten that separate, pre-existing budget.
+   */
+  recordTaskDayUsage(taskId: string, dayKey: string, minutesUsed: number): void {
+    const key = taskDayKey(taskId, dayKey);
+    this.taskDayUsage.set(key, (this.taskDayUsage.get(key) ?? 0) + minutesUsed);
   }
 
   clone(): AvailabilityLedger {
     const copy = new AvailabilityLedger(this.windows);
     for (const [day, used] of this.dayUsage) copy.dayUsage.set(day, used);
+    for (const [key, used] of this.taskDayUsage) copy.taskDayUsage.set(key, used);
     return copy;
   }
 }
+
+/** Task ids are caller-supplied, so the two halves are joined by a unit
+ * separator rather than by a delimiter an id could itself contain. */
+const taskDayKey = (taskId: string, dayKey: string): string =>
+  `${taskId}\u001f${dayKey}`;
 
 function localDayKeyOf(instant: Instant, windows: readonly FreeWindow[]): string | undefined {
   return windows.find((w) => w.start <= instant && instant < w.end)?.dayKey;
